@@ -18,9 +18,13 @@ from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Any, Literal, Protocol
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from backend.services.interpreter_prompt import PROMPT_VERSION, build_interpretation_prompt
+
+# Ensure local environment variables are loaded if present.
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -242,19 +246,20 @@ class Interpreter:
             strict=True,
         )
 
+        # F20: Widened timeouts (8.0s / 8.0s / 6.0s)
         result, primary_failure = self._attempt(
-            "gemini", "normal", self._gemini_provider, normal_prompt, 2.5
+            "gemini", "normal", self._gemini_provider, normal_prompt, 8.0
         )
         if primary_failure is not None and primary_failure.retryable:
             result, primary_failure = self._attempt(
-                "gemini", "strict_retry", self._gemini_provider, strict_prompt, 1.0
+                "gemini", "strict_retry", self._gemini_provider, strict_prompt, 8.0
             )
         if result is not None:
             self._cache.set(key, result)
             return copy.deepcopy(result)
 
         result, secondary_failure = self._attempt(
-            "groq", "secondary", self._groq_provider, normal_prompt, 1.5
+            "groq", "secondary", self._groq_provider, normal_prompt, 6.0
         )
         if result is not None:
             self._cache.set(key, result)
@@ -326,7 +331,8 @@ class Interpreter:
             from google.genai import types
         except ImportError as error:
             raise ProviderError("gemini_sdk_unavailable", retryable=False) from error
-        model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        # F19: Default to gemini-3.1-flash-lite
+        model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
         def request() -> Any:
             client = genai.Client(api_key=api_key)
@@ -365,7 +371,8 @@ class Interpreter:
             from groq import Groq
         except ImportError as error:
             raise ProviderError("groq_sdk_unavailable", retryable=False) from error
-        model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+        # Fix c: Default to openai/gpt-oss-120b
+        model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
         def request() -> Any:
             client = Groq(api_key=api_key, timeout=timeout_seconds)
@@ -398,11 +405,32 @@ class Interpreter:
 
 
 def interpret_notes(
-    notes: Sequence[str], *, capacity_kwh: float, minimum_energy_kwh: float
+    notes_or_request: Any,
+    *,
+    capacity_kwh: float | None = None,
+    minimum_energy_kwh: float | None = None,
 ) -> dict[str, Any]:
-    """Convenience entry point for WS-01 orchestration after rendezvous."""
+    """Entry point for WS-01 orchestration after rendezvous.
+
+    Accepts either:
+    - a ScenarioRequest object (as invoked by backend/routes/optimize.py)
+    - a sequence of note strings with keyword arguments capacity_kwh and minimum_energy_kwh
+    """
+    if hasattr(notes_or_request, "operator_notes") and hasattr(notes_or_request, "battery"):
+        notes = notes_or_request.operator_notes
+        capacity = float(notes_or_request.battery.capacity_kwh)
+        min_energy = float(notes_or_request.battery.minimum_energy_kwh)
+    elif isinstance(notes_or_request, dict) and "operator_notes" in notes_or_request and "battery" in notes_or_request:
+        notes = notes_or_request["operator_notes"]
+        capacity = float(notes_or_request["battery"]["capacity_kwh"])
+        min_energy = float(notes_or_request["battery"]["minimum_energy_kwh"])
+    else:
+        notes = notes_or_request
+        capacity = float(capacity_kwh) if capacity_kwh is not None else 0.0
+        min_energy = float(minimum_energy_kwh) if minimum_energy_kwh is not None else 0.0
+
     return Interpreter().interpret(
         notes,
-        capacity_kwh=capacity_kwh,
-        minimum_energy_kwh=minimum_energy_kwh,
+        capacity_kwh=capacity,
+        minimum_energy_kwh=min_energy,
     )

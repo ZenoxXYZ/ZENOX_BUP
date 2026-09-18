@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
@@ -13,6 +14,7 @@ from backend.services.interpreter import (
     ProviderError,
     _classify_provider_exception,
     _gemini_response_schema,
+    interpret_notes,
 )
 from backend.services.interpreter_prompt import build_interpretation_prompt
 
@@ -226,3 +228,27 @@ def test_all_supported_provider_types_are_mechanically_packaged(
     interpretation = result["interpretations"][0]
     assert interpretation["directive_type"] == directive_type
     assert interpretation["structured_adjustment"] == expected_adjustment
+
+
+def test_interpret_notes_accepts_scenario_request_or_kwargs(monkeypatch: pytest.MonkeyPatch) -> None:
+    req = MagicMock()
+    req.operator_notes = ["test note"]
+    req.battery.capacity_kwh = 200.0
+    req.battery.minimum_energy_kwh = 40.0
+
+    mock_result = {
+        "interpretations": [
+            {
+                "note_index": 0,
+                "applies": False,
+                "directive_type": "no_op",
+                "structured_adjustment": None,
+                "explanation": "mocked",
+            }
+        ]
+    }
+    monkeypatch.setattr(Interpreter, "interpret", lambda self, notes, **kwargs: mock_result)
+
+    res = interpret_notes(req)
+    assert "interpretations" in res
+    assert len(res["interpretations"]) == 1

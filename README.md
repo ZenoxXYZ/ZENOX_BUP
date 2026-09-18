@@ -1,526 +1,299 @@
-# HADF — Hackathon Agentic Development Framework
+---
+title: GridWise Energy Optimization API
+emoji: ⚡
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
 
-> A human-governed, proof-first engineering framework for turning an approved
-> challenge into a bounded, verified, explainable submission.
+# GridWise — LLM-Assisted Energy Optimization Service
 
-AI can accelerate implementation. It cannot replace challenge interpretation,
-architecture, integration, verification, or human responsibility for the final
-result. HADF coordinates those activities through repository-carried project
-truth, bounded workstreams, evidence, and explicit decision gates.
+[![CI](https://github.com/FMAmax/ZENOX_BUP/actions/workflows/ci.yml/badge.svg)](https://github.com/FMAmax/ZENOX_BUP/actions/workflows/ci.yml)
+[![GHCR Container Publish](https://github.com/FMAmax/ZENOX_BUP/actions/workflows/ghcr.yml/badge.svg)](https://github.com/FMAmax/ZENOX_BUP/actions/workflows/ghcr.yml)
 
-```text
-HADF methodology
-!= Product Build specialization
-!= optional FastAPI/PostgreSQL starter
-!= historical implementation and review evidence
+GridWise is an autonomous, deterministic, LLM-assisted microgrid energy dispatch service for 24-hour campus scenarios under time-of-use tariffs and natural-language operator notes, developed for the **BUP CSE FEST 2026 Hackathon**. The service receives a 24-hour campus scenario (battery parameters, solar capacity, grid connection limits, tariffs, and forecasts) together with 1–3 natural-language operator notes; translates the operator memos into validated structured directives using a generative language model backed by a robust fallback ladder; compiles these directives into physical constraints; and optimizes battery charging, discharging, and grid import using a continuous linear program (HiGHS via SciPy) to produce a cost-minimizing, physically feasible 24-hour dispatch schedule.
+
+---
+
+## POST /optimize-energy Contract & API Specification
+
+The service exposes two HTTP endpoints:
+- `GET /health` — Readiness and liveness probe returning `{"status":"ok"}` (guaranteed ready in <60 seconds cold).
+- `POST /optimize-energy` — Main optimization endpoint returning validated directive interpretations and 24-hour hourly schedule.
+
+### Request Payload Contract
+
+The request requires 24 hourly intervals for `grid_tariff_bdt_per_kwh`, `hourly_demand_kwh`, and `hourly_solar_kwh`, along with 1–3 `operator_notes`:
+
+```json
+{
+  "scenario_id": "SAMPLE-01",
+  "battery": {
+    "capacity_kwh": 200.0,
+    "current_charge_kwh": 80.0,
+    "max_charge_rate_kw": 50.0,
+    "max_discharge_rate_kw": 50.0,
+    "min_charge_pct": 20.0
+  },
+  "site_parameters": {
+    "solar_capacity_kw": 250.0,
+    "grid_connection_limit_kw": 400.0
+  },
+  "tariffs": {
+    "grid_tariff_bdt_per_kwh": [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 14.0, 14.0, 14.0, 14.0, 14.0, 8.0, 5.0]
+  },
+  "forecasts": {
+    "hourly_demand_kwh": [60.0, 55.0, 50.0, 50.0, 52.0, 65.0, 90.0, 120.0, 150.0, 180.0, 200.0, 210.0, 215.0, 210.0, 195.0, 170.0, 140.0, 160.0, 180.0, 175.0, 150.0, 120.0, 90.0, 70.0],
+    "hourly_solar_kwh": [0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 25.0, 60.0, 110.0, 155.0, 180.0, 195.0, 180.0, 150.0, 105.0, 55.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  },
+  "operator_notes": [
+    "Peak hours tonight will face higher transmission stress; please keep battery reserve at or above 45% between 17:00 and 22:00.",
+    "Cloud cover alert: expect solar output to drop to 25% of forecast between 11:00 and 14:00."
+  ]
+}
 ```
 
-**Parallelize implementation, not architecture.**
+### Response Payload Contract
 
-**Generated code is not verified work.**
-
-Carry execution state in the repository, not in chat memory.
-
-## Why HADF Exists
-
-Hackathon teams must turn incomplete challenge information into a credible
-submission under time pressure. AI can make code fast, but it can also amplify
-wrong assumptions, uncontrolled scope, incompatible parallel changes, and weak
-claims of completion. HADF is a lightweight operating framework for keeping
-requirements, design, work, integration, proof, and human authority connected.
-
-It is not a required technology stack, product architecture, or a replacement
-for official event rules. Official rules, organizer clarifications, and the
-approved challenge always take precedence.
-
-## Problems HADF Solves
-
-| Common failure | HADF response |
-| --- | --- |
-| Coding starts before the challenge is understood | [Challenge Intake](docs/runbooks/CHALLENGE_INTAKE.md) and a [Challenge Profile](docs/core/CHALLENGE_CLASSIFICATION.md) |
-| The wrong solution shape is assumed | Classification before stack or workflow selection |
-| Scope grows beyond what can be demonstrated | [Minimum Winning Scope](docs/core/PROOF_MODEL.md) |
-| A central claim has no credible proof | Critical Proof Path, Proof Package, and Realization Boundary |
-| Contributors invent incompatible architectures | Approved `plan.md` and Interface / Assumption Contracts |
-| Agents make unrelated changes | Bounded workstreams and [AGENTS.md](AGENTS.md) |
-| Ownership is unclear | One accountable Primary Owner per workstream |
-| Chat context disappears between sessions | Repository-carried project truth and optional member routing |
-| Parallel work drifts | Dependencies, contracts, branches, and rendezvous |
-| A merge is mistaken for integration | Exercise the real boundary and collect evidence |
-| “The agent says it is done” | Evidence-based completion gates |
-| Integration happens too late | Risk-driven applicable rendezvous |
-| Teams polish past the useful deadline | Solution Freeze and event-rule precedence |
-| Prototype claims exceed available evidence | Realization Boundary |
-| Nobody can explain the finished system | Feature Reconstruction and Project Reconstruction |
-
-## HADF 2.0 in One Diagram
-
-```text
-OFFICIAL CHALLENGE
-        ↓
-UNDERSTAND → CLASSIFY → CHOOSE → BOUND
-        ↓
-Challenge Profile
-→ Minimum Winning Scope
-→ Critical Proof Path
-→ Workstreams + Interfaces / Assumptions
-        ↓
-BUILD → INTEGRATE → PROVE → SOLUTION FREEZE
-        ↓
-SUBMIT / DELIVER
+```json
+{
+  "scenario_id": "SAMPLE-01",
+  "directive_interpretation": [
+    {
+      "note_index": 0,
+      "applies": true,
+      "directive_type": "minimum_battery_reserve",
+      "structured_adjustment": {
+        "minimum_energy_kwh": 90.0,
+        "hours": [17, 18, 19, 20, 21]
+      },
+      "explanation": "Maintain at least 45% (90 kWh) battery reserve between 17:00 and 22:00."
+    },
+    {
+      "note_index": 1,
+      "applies": true,
+      "directive_type": "solar_reduction",
+      "structured_adjustment": {
+        "factor": 0.25,
+        "hours": [11, 12, 13]
+      },
+      "explanation": "Solar output reduced to 25% between 11:00 and 14:00."
+    }
+  ],
+  "hourly_plan": [
+    {
+      "hour": 0,
+      "grid_kwh": 60.0,
+      "solar_used_kwh": 0.0,
+      "battery_action": "idle",
+      "battery_kwh": 0.0,
+      "battery_energy_after_kwh": 80.0
+    }
+  ],
+  "total_grid_kwh": 1820.0,
+  "total_cost_bdt": 16450.0,
+  "peak_grid_kwh": 215.0,
+  "plan_summary": "24-hour optimal dispatch generated with HiGHS LP solver."
+}
 ```
 
-The [Proof Package](docs/core/PROOF_MODEL.md) defines the evidence required for
-the claim. The Realization Boundary keeps the target real system, hackathon
-realization, available evidence, and supported claims honest.
+### Copy-Pasteable cURL Example
 
-## Universal HADF, Product Build, and the Optional Starter
-
-HADF is the universal engineering framework. Product Build is one application
-of it for user-facing software products and services. The included
-FastAPI/PostgreSQL foundation is one optional verified Product Build starter.
-
-| Layer | What it provides | What it does not require |
-| --- | --- | --- |
-| Universal HADF | Classification, proof, workstreams, contracts, evidence, governance, and delivery discipline | A frontend, backend, API, database, browser, deployment, or software artifact |
-| Product Build | MVP, Golden Path, product contracts, full-stack integration, browser E2E, and Feature Freeze where relevant | Every HTTP, checker, hardware, model, or simulation challenge |
-| Optional starter | A health-focused FastAPI/PostgreSQL development foundation | That HADF users adopt this stack or build a product |
-
-Start with challenge shape and evaluation contract, not a technology choice.
-
-## How HADF Works
-
-The lifecycle is a set of functions, not rigid time blocks. Select timing from
-the challenge, event duration, checkpoints, dependencies, risk, and evaluation
-contract using [Timebox and Lifecycle Guidance](docs/runbooks/TIME_COMPRESSION.md).
-
-| Function | Purpose |
-| --- | --- |
-| Understand | Extract official constraints, challenge requirements, supplied assets, and unknowns. |
-| Classify | Record the challenge shape and evaluation contract before choosing a solution path. |
-| Choose | Select only the methodology, specialization, artifact, and stack that the challenge justifies. |
-| Bound | Define Minimum Winning Scope, Critical Proof Path, workstreams, contracts, evidence, and exit criteria. |
-| Build | Realize bounded capabilities with one accountable owner and approved design stability. |
-| Integrate | Exercise independently developed boundaries where applicable. |
-| Prove | Gather the evidence the evaluation contract actually requires. |
-| Freeze | Use Solution Freeze to protect proof, integration, submission, and critical fixes. |
-| Submit / Deliver | Package the selected artifact, evidence, and explanation under official rules. |
-
-## Classify, Bound, and Prove
-
-### Challenge Profile
-
-The Challenge Profile prevents treating every challenge as a web application.
-It describes five dimensions:
-
-- **Starting State** — what already exists and what must change or be shown.
-- **Engineering Objective** — the kind of capability, repair, improvement, or
-  artifact required.
-- **Evaluation Contract** — how success will be judged.
-- **Dominant Artifact** — the primary deliverable or system boundary.
-- **Realization / Proof Mode** — how the claim can be exercised and evidenced.
-
-A Product Build may need a user flow; a hidden-checker API needs exact required
-behavior; an optimization challenge needs correctness and benchmark evidence;
-a hardware challenge may need a physical interface and measurement. Read the
-[Challenge Classification guide](docs/core/CHALLENGE_CLASSIFICATION.md) before
-choosing a specialization or stack.
-
-### Minimum Winning Scope
-
-Minimum Winning Scope is the smallest scope strong enough to satisfy the
-central evaluation contract and make the primary claim demonstrable. It protects
-teams from building a large but weak solution.
-
-For Product Build only:
-
-```text
-Minimum Winning Scope → MVP
+```bash
+curl -X POST http://localhost:7860/optimize-energy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scenario_id": "SAMPLE-01",
+    "battery": {
+      "capacity_kwh": 200.0,
+      "current_charge_kwh": 80.0,
+      "max_charge_rate_kw": 50.0,
+      "max_discharge_rate_kw": 50.0,
+      "min_charge_pct": 20.0
+    },
+    "site_parameters": {
+      "solar_capacity_kw": 250.0,
+      "grid_connection_limit_kw": 400.0
+    },
+    "tariffs": {
+      "grid_tariff_bdt_per_kwh": [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 14.0, 14.0, 14.0, 14.0, 14.0, 8.0, 5.0]
+    },
+    "forecasts": {
+      "hourly_demand_kwh": [60.0, 55.0, 50.0, 50.0, 52.0, 65.0, 90.0, 120.0, 150.0, 180.0, 200.0, 210.0, 215.0, 210.0, 195.0, 170.0, 140.0, 160.0, 180.0, 175.0, 150.0, 120.0, 90.0, 70.0],
+      "hourly_solar_kwh": [0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 25.0, 60.0, 110.0, 155.0, 180.0, 195.0, 180.0, 150.0, 105.0, 55.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    },
+    "operator_notes": [
+      "Peak hours tonight will face higher transmission stress; please keep battery reserve at or above 45% between 17:00 and 22:00.",
+      "Cloud cover alert: expect solar output to drop to 25% of forecast between 11:00 and 14:00."
+    ]
+  }'
 ```
 
-### Critical Proof Path
+---
 
-Critical Proof Path is the shortest observable sequence that proves the central
-claim. It is not universally a browser journey.
+## Local Quickstart
 
-| Challenge shape | Example proof path |
-| --- | --- |
-| Product Build | User action → processing → state/result → visible outcome |
-| Hidden-checker API | Startup → request → required reasoning → exact response → checker |
-| Optimization | Baseline → algorithm → correctness → benchmark improvement |
-| Hardware/IoT | Stimulus → physical system → measurement → expected result |
-| Security repair | Reproduce failure → locate cause → patch → retest |
+Follow these steps to run GridWise locally on a clean machine:
 
-### Proof Package and Realization Boundary
+### 1. Prerequisites
+- Python 3.12+
+- Git
 
-A Proof Package is the minimum collection of observable evidence required to
-demonstrate the central claim. The evidence may be tests, checker output,
-benchmarks, measurements, simulation validation, inspection, or another
-evaluation-appropriate mechanism.
-
-The Realization Boundary records the target real system, hackathon realization,
-available evidence, claims supported, and claims not supported. A prototype,
-mock, synthetic dataset, or simulation must not silently become a production
-claim. See the [Proof Model](docs/core/PROOF_MODEL.md).
-
-## Workstreams, Contracts, and Integration
-
-A workstream is a bounded engineering capability, not a folder, role, or fixed
-technical layer.
-
-```text
-one capability / workstream
-→ one accountable Primary Owner
-→ multiple possible contributors / specialists
-→ one integrated completion state
+### 2. Clone Repository
+```bash
+git clone https://github.com/FMAmax/ZENOX_BUP.git
+cd ZENOX_BUP
 ```
 
-Primary Owner means accountability for coordination, dependencies, blockers,
-contract adherence, evidence, and driving completion. It does not mean
-exclusive implementation.
-
-An Interface / Assumption Contract is any shared condition independently
-developed work relies on: an API or schema, model input/output boundary,
-benchmark interface, hardware protocol, simulation assumption, tolerance, or
-other invariant. A rendezvous is the first real exercise of independently
-developed components, assumptions, artifacts, or boundaries together.
-
-Product Build may specialize a rendezvous into frontend ↔ API ↔ service ↔
-persistence integration. That is one example, not a universal requirement.
-Use [Workstreams](docs/core/WORKSTREAMS.md) and the
-[Rendezvous runbook](docs/runbooks/RENDEZVOUS.md) for the detailed rules.
-
-## Human-Agent Governance
-
-```text
-AI OUTPUT
-   ↓
-EVIDENCE
-   ↓
-REVIEW
-   ↓
-VERIFICATION
-   ↓
-HUMAN DECISION
-```
-
-Humans retain authority over challenge interpretation, requirements,
-architecture, material assumptions, important contracts, acceptance, merge,
-release, and submission. Agents can assist with inspection, planning,
-implementation, testing, debugging, review, research, evidence, and
-documentation.
-
-An agent is a bounded assistant, not an autonomous project authority or human
-teammate. Read [Decision Authority](docs/core/DECISION_AUTHORITY.md) and
-[AGENTS.md](AGENTS.md) for the operating policy.
-
-## Member-Aware Team Execution
-
-HADF can carry team execution state in the repository rather than rely on a
-long chat handoff. The generic repository provides a runbook, Builder prompt,
-and lightweight routing template. An actual challenge team may instantiate
-`docs/team/MEMBER_N.md` only when it is useful for its real members.
-
-```text
-shared project truth
-→ lightweight member routing
-→ Member N
-→ Task Orientation
-→ Task Plan
-→ human review
-→ Implementation Plan
-→ human approval
-→ implementation
-→ Implementation Report
-→ Feature Reconstruction
-→ completion assessment
-```
-
-`execute.md` remains the canonical live execution state. A `MEMBER_N.md` file
-is routing only. `Member N` means “reconstruct my current assignment, explain
-and decompose it, then create a Task Plan”; it never means “start coding.”
-Fresh Builder sessions recover the current assignment from repository state, and
-reassignment does not require a giant context-transfer prompt.
-
-```text
-Member 2
-→ reconstruct WS-03
-→ explain and decompose the task
-→ Task Plan → review
-→ Implementation Plan → approval
-→ implement → report → Feature Reconstruction
-```
-
-- **Task Plan:** What are we building and why?
-- **Implementation Plan:** Exactly how will the approved approach be realized?
-
-Feature Reconstruction records one workstream's implemented reality, evidence,
-plan divergence, limitations, and downstream handoff needs. Project
-Reconstruction explains the complete assembled solution near final delivery.
-
-For the operating procedure, use [Team Execution](docs/runbooks/TEAM_EXECUTION.md),
-the [Member-Aware Builder prompt](docs/prompts/TEAM_BUILDER.md), and the
-[Member Execution Routing Template](docs/templates/MEMBER_EXECUTION_TEMPLATE.md).
-
-## Evidence-Based Completion
-
-```text
-LOCAL COMPLETE
-→ focused local evidence exists
-
-MERGE READY
-→ applicable repository / PR gate has passed
-
-WORKSTREAM COMPLETE
-→ artifact exists
-+ interfaces / assumptions hold
-+ applicable integration occurred
-+ verification passed
-+ evidence exists
-+ exit criteria are satisfied
-```
-
-Merge Ready is a Git/PR workflow gate where branches and pull requests apply;
-it does not prove integration. Workstream Complete is evidence-based and may
-remain pending after a merge.
-
-```text
-Merge ≠ integration.
-CI ≠ review.
-Review ≠ QA.
-Generated code ≠ verified work.
-```
-
-See the canonical [Definition of Done](docs/core/DEFINITION_OF_DONE.md).
-
-## Git, PR, CI, and Integration
-
-```text
-branch
-→ implementation
-→ verification
-→ PR
-→ CI
-→ merge
-→ synchronize
-→ applicable rendezvous
-→ evidence-backed completion
-```
-
-- Different humans normally use separate clones.
-- One human with one mutable task normally uses a normal branch.
-- One human running concurrent mutable tasks or agents uses separate branches
-  and worktrees.
-
-Worktrees are conditional isolation, not a mandatory team-size practice. See
-the [Git mental model](docs/git/GIT_MENTAL_MODEL.md),
-[Pull Request workflow](docs/git/PULL_REQUEST_WORKFLOW.md), and
-[Post-Merge Sync](docs/git/POST_MERGE_SYNC.md).
-
-## Product Build Specialization
-
-Product Build applies when the Challenge Profile and evaluation contract call
-for a user-facing product or service. It may include an API-only service when
-that service itself is the evaluated product. HTTP alone does not make a
-fixed-schema hidden-checker task Product Build.
-
-| Universal HADF | Product Build application |
-| --- | --- |
-| Minimum Winning Scope | MVP |
-| Critical Proof Path | Golden Path |
-| Interface / Assumption Contract | API/schema/UI/backend contract |
-| Rendezvous | frontend/API/backend/persistence integration |
-| Solution Freeze | Feature Freeze |
-| Evaluation-driven verification | API, integration, or browser E2E where applicable |
-
-Use the [Product Build playbook](docs/playbooks/product-build.md) when this
-specialization fits. MVP, Golden Path, persistence design, browser E2E, Feature
-Freeze, and deployment remain conditional Product Build guidance.
-
-## Optional FastAPI/PostgreSQL Starter
-
-The included software starter is a convenience, not a HADF requirement. Use it
-only when the approved Product Build design, official rules, and selected
-delivery path fit its Python/FastAPI/PostgreSQL direction.
-
-| Area | Included starter |
-| --- | --- |
-| API | FastAPI |
-| Validation | Pydantic |
-| ORM | SQLAlchemy |
-| Database | PostgreSQL |
-| Migrations | Alembic |
-| Testing | pytest + httpx |
-| Local PostgreSQL | Docker Compose |
-| CI | GitHub Actions |
-| Frontend | Intentionally unselected |
-
-The foundation is deliberately health-focused. It does not include product
-models, routes, business rules, authentication, seed data, or a real frontend.
-It verifies migration execution, not real-model Alembic autogeneration,
-non-trivial schema migration, or seed-data workflow.
-
-Read the [FastAPI/PostgreSQL starter guide](docs/starters/software-fastapi-postgres.md)
-for the verified setup, PostgreSQL, Docker Compose, Alembic, environment, port,
-and database-safety instructions.
-
-## Quick Start
-
-This optional path verifies the included software starter on Windows PowerShell:
-
-```powershell
+### 3. Virtual Environment Setup
+Create and activate an isolated virtual environment:
+```bash
+# Windows (PowerShell):
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m pytest
-uvicorn backend.main:app --reload
+.venv\Scripts\Activate.ps1
+
+# Linux / macOS:
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-Then open [http://127.0.0.1:8000/](http://127.0.0.1:8000/). For macOS/Linux,
-PostgreSQL, Alembic, Docker Compose, and port overrides, use the canonical
-[starter guide](docs/starters/software-fastapi-postgres.md).
-
-## Repository Map
-
-```text
-.
-├── AGENTS.md                 Stable operating policy
-├── problem.md                Approved challenge interpretation
-├── plan.md                   Approved design and roadmap
-├── execute.md                Canonical live workstream state
-├── review.md                 Verification and findings state
-│
-├── docs/
-│   ├── core/                 Canonical HADF concepts and authority
-│   ├── playbooks/            Selected specializations, including Product Build
-│   ├── modes/                Solo and team coordination patterns
-│   ├── runbooks/             Operational procedures and checkpoints
-│   ├── prompts/              Reusable agent handoffs
-│   ├── templates/            Reusable templates, including member routing
-│   ├── starters/             Setup guides for optional verified starters
-│   ├── phases/               Historical implementation evidence
-│   └── reviews/              Historical independent-review evidence
-│
-├── backend/                  Optional FastAPI starter foundation
-├── frontend/                 Placeholder for a challenge-selected UI stack
-├── migrations/               Optional starter schema-evolution environment
-├── tests/                    Starter verification
-└── .github/                  CI workflow
+### 4. Install Runtime Dependencies
+Install the lean runtime dependencies:
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-`docs/templates/` contains reusable templates. Live `docs/team/MEMBER_N.md`
-routing files belong to challenge instances only when an actual team chooses to
-instantiate them.
+### 5. Configure Environment Variables
+Copy `.env.example` to `.env` and fill in your API credentials:
+```bash
+cp .env.example .env
+```
+Set your `GEMINI_API_KEY` (and optionally `GROQ_API_KEY`). Note: never commit `.env` to Git.
 
-## Project Truth Model
-
-| Artifact | Purpose |
-| --- | --- |
-| `AGENTS.md` | Operating policy for humans and agents |
-| `problem.md` | What the approved challenge requires |
-| `plan.md` | Approved engineering and design decisions |
-| `execute.md` | Canonical live execution and workstream state |
-| `review.md` | Verification, findings, risks, and quality state |
-| Code, tests, migrations, runtime, and Git | What actually exists and works |
-| `docs/team/MEMBER_N.md` | Optional routing for an instantiated challenge team |
-
-Project truth has distinct states:
-
-```text
-DESIGN → IMPLEMENTATION → SHARED SOURCE → RUNTIME
+### 6. Start the Service
+```bash
+uvicorn backend.main:app --host 0.0.0.0 --port 7860
 ```
 
-Those states can disagree. Repository evidence must be checked before treating
-a summary as fact. A member-routing file is never authority over `execute.md`.
-Read the [Project Truth Model](docs/core/PROJECT_TRUTH_MODEL.md) for the full
-authority and evidence boundaries.
-
-## Team Modes
-
-Allocate work from challenge shape, Minimum Winning Scope, workstreams,
-dependencies, risk, and available humans—not fixed backend/frontend titles.
-
-```text
-Challenge Profile
-→ Minimum Winning Scope
-→ workstreams
-→ dependencies and risk
-→ available humans
-→ role allocation
+### 7. Verify Health Probe
+```bash
+curl http://127.0.0.1:7860/health
+# Expected output: {"status":"ok"}
 ```
 
-Use [Solo](docs/modes/SOLO.md), [Team 2](docs/modes/TEAM_2.md),
-[Team 3](docs/modes/TEAM_3.md), or [Team 4](docs/modes/TEAM_4.md) as concise
-coordination patterns. After real allocation, a team may instantiate lightweight
-member-routing files when fresh-session assignment recovery is useful.
+---
 
-## Worked Example: Choosing the Right Path
+## Docker Build and Execution
 
-Illustrative only: challenge shape determines workflow and technology, not the
-reverse.
+GridWise runs as a single-stage, non-root container based on `python:3.12-slim`. **No secrets or keys are baked into any image layer**; API keys arrive exclusively as runtime environment variables.
 
-| Challenge shape | Likely HADF route | Evidence focus |
-| --- | --- | --- |
-| Product Build | Product Build playbook; optional starter only if suitable | Critical user/product outcome |
-| Fixed-schema checker API | Universal HADF; Product Build is not the default | Required responses and checker result |
-| Optimization benchmark | Universal HADF with benchmark-oriented workstreams | Correctness and measurable improvement |
-| Hardware/IoT | Universal HADF with physical/interface workstreams | Measurement and Realization Boundary |
+### Build Local Image
+```bash
+docker build -t gridwise:latest .
+```
 
-## Choose Your Path
+### Run Container with Runtime Keys
+Pass environment variables using `-e` flags or `--env-file`:
 
-| If you need to... | Start here |
-| --- | --- |
-| Understand HADF quickly | [START_HERE.md](START_HERE.md) |
-| Classify a challenge | [Challenge Classification](docs/core/CHALLENGE_CLASSIFICATION.md) |
-| Define proof and scope | [Proof Model](docs/core/PROOF_MODEL.md) |
-| Shape the approved design | [Master Design](docs/runbooks/MASTER_DESIGN.md) |
-| Start bounded workstreams | [Workstream Start](docs/runbooks/WORKSTREAM_START.md) |
-| Run member-aware execution | [Team Execution](docs/runbooks/TEAM_EXECUTION.md) |
-| Launch a member-aware Builder | [Team Builder prompt](docs/prompts/TEAM_BUILDER.md) |
-| Use Product Build | [Product Build playbook](docs/playbooks/product-build.md) |
-| Use the included starter | [FastAPI/PostgreSQL starter guide](docs/starters/software-fastapi-postgres.md) |
-| Coordinate a team | [Solo and team modes](docs/modes/TEAM_2.md) |
-| Review, debug, or verify | [Reviewer](docs/prompts/REVIEWER.md), [Debugger](docs/prompts/DEBUGGER.md), and [QA](docs/prompts/QA.md) prompts |
-| Compress a timebox | [Timebox and Lifecycle Guidance](docs/runbooks/TIME_COMPRESSION.md) |
+```bash
+# Option A: Passing variables directly
+docker run --rm -p 7860:7860 \
+  -e GEMINI_API_KEY="your_gemini_api_key_here" \
+  -e GEMINI_MODEL="gemini-3.1-flash-lite" \
+  -e GROQ_API_KEY="your_groq_api_key_here" \
+  -e GROQ_MODEL="qwen3.8-27b" \
+  gridwise:latest
 
-## What This Project Demonstrates
+# Option B: Passing via .env file
+docker run --rm -p 7860:7860 --env-file .env gridwise:latest
+```
 
-This repository demonstrates reusable engineering work rather than a finished
-domain product:
+### Verify Container Health
+```bash
+curl http://localhost:7860/health
+```
 
-- Software-process architecture for high-pressure challenge work.
-- Human-in-the-loop AI engineering and bounded agent workflows.
-- Repository-carried execution state and fresh-session recovery.
-- Requirements normalization, proof-first scope control, and realization-boundary discipline.
-- Multi-contributor ownership, contracts, rendezvous, Git/PR/CI, and integration design.
-- Evidence-based verification and human reconstruction of implemented reality.
-- A verified FastAPI, SQLAlchemy, PostgreSQL, Alembic, pytest, Docker Compose,
-  and GitHub Actions foundation for suitable Product Build work.
+### Pulling from GitHub Container Registry (GHCR Fallback)
+The automated GitHub Actions workflow pushes pre-built images to GHCR on each push to `main`:
+```bash
+docker pull ghcr.io/fmamax/zenox_bup:latest
+docker run --rm -p 7860:7860 --env-file .env ghcr.io/fmamax/zenox_bup:latest
+```
 
-## Design Principles
+---
 
-- Understand before building.
-- Classify before selecting a stack.
-- Bound claims with evidence.
-- Parallelize implementation, not architecture.
-- Carry execution state in the repository, not in chat memory.
-- Generated code is not verified work.
-- Merge is not integration.
-- Compress scope, not required proof.
-- Technology is not challenge type.
-- Humans retain material decision authority.
+## Testing and Evaluation Harness
 
-## Current Foundation and Known Limitations
+### 1. Install Development / Test Dependencies
+Test-only dependencies (`pytest`, `httpx`) are decoupled from production and kept in `requirements-dev.txt`:
+```bash
+pip install -r requirements-dev.txt
+```
 
-HADF 2.0 structural generalization is complete: WS1–WS8 are merged, and
-Member-Aware Team Execution is merged.
-The included FastAPI/PostgreSQL starter remains intentionally generic and
-health-focused. It has no product-domain behavior, and it has not yet verified
-real-model Alembic autogeneration, non-trivial schema migration, or seed-data
-workflow.
+### 2. Run the Unit & Replay Test Suite
+Run the 181-test suite covering contract shapes, LP constraints, mutation Sabotage tests, and guardrail validations:
+```bash
+pytest tests/ -q
+```
 
-## Project Status
+### 3. Run the Evaluation Harness against a URL
+Execute the independent verification harness against a local server or deployed Hugging Face Space:
 
-The next phase is real-world validation: use HADF against actual challenges,
-observe friction, collect evidence, and add playbooks, modules, examples, or
-starters only when real use justifies them.
+```bash
+python tests/harness.py --url http://127.0.0.1:7860 --cases tests/fixtures/public_cases.json
+```
+
+The harness performs:
+- **Readiness check**: Measures cold-start connectivity to `/health`.
+- **Latency profiling**: Measures p50 and p95 latency over repeated queries.
+- **Mode A verification (Self-consistency)**: Verifies that `hourly_plan` satisfies all directives returned in `directive_interpretation`.
+- **Mode B verification (Ground truth)**: Verifies that `hourly_plan` satisfies the official organizer ground-truth directives from the public test set.
+- **Cost ratio analysis**: Compares computed schedule cost against reference HiGHS LP optima (`our_cost / ref_cost`).
+- **Rubric scorecard**: Emits a detailed 100-point evaluation breakdown.
+
+---
+
+## Environment Variables & Security Policy
+
+GridWise requires no database. Configuration is supplied strictly through environment variables:
+
+| Variable Name | Description | Required | Example / Default |
+| --- | --- | --- | --- |
+| `GEMINI_API_KEY` | Google AI Studio API Key | Yes (for primary LLM interpretation) | Placeholder only: `your_gemini_key` |
+| `GEMINI_MODEL` | Google Gemini model name | No | `gemini-3.1-flash-lite` |
+| `GROQ_API_KEY` | Groq Cloud API Key | Optional (for secondary fallback inference) | Placeholder only: `your_groq_key` |
+| `GROQ_MODEL` | Groq model identifier | No | `qwen3.8-27b` |
+| `PORT` | Web server listen port | No | Default `7860` (auto-configured on HF Spaces) |
+
+### Security Policy
+- **Zero Secrets in Repository & Image**: Secrets are strictly gitignored via `.gitignore` and excluded from containers via `.dockerignore`. Never commit `.env` or hardcode API keys.
+- **Runtime-Only Injection**: In Docker, credentials are provided only via `--env-file` or `-e` environment injection at container run time.
+- **Sanitized Wire Responses**: Exceptions log full stack traces internally to stderr, returning opaque `{"error": "internal_error", ...}` payloads to clients. No API key, token, or internal trace is ever leaked on the wire.
+- **Controlled Degradation Ladder**: If both LLM providers fail or time out, directives safely degrade to `no_op` rather than crashing with HTTP 500, guaranteeing a valid base-rule schedule.
+
+---
+
+## Architecture Overview
+
+GridWise implements a deterministic 7-stage sequential pipeline designed for correctness, safety, and sub-second execution:
+
+1. **API Boundary & Schema Gate**: Strict Pydantic v2 validation enforcing contract C-1. Structurally malformed requests immediately receive HTTP 400 (never 422 or 500).
+2. **Batched LLM Interpretation**: A single batched prompt passes all 1–3 operator notes to the LLM (primary: Google Gemini `gemini-3.1-flash-lite`; secondary: Groq `qwen3.8-27b`). Structured JSON schema enforcement ensures schema compliance.
+3. **Deterministic Guardrails**: Normalizes LLM outputs (expanding hour ranges `[start, end]` into sequential hour arrays, validating `0 <= factor <= 1`, verifying reserve bounds) and rejects invented directive types.
+4. **Constraint Compiler**: Merges normalized directives into per-hour lower/upper bounds (`min(factor)` for solar, `max(reserve)` for battery, set union for no-charge / no-discharge windows, `min(cap)` for grid imports).
+5. **Continuous Linear Program (HiGHS LP)**: Uses `scipy.optimize.linprog` with the HiGHS solver to minimize 24-hour total grid energy cost subject to energy balance, battery capacity, maximum charge/discharge rates, and net-neutral end-of-day battery energy ($E_{23} = E_{\text{initial}}$).
+6. **Materializer & Accounting**: Eliminates simultaneous charge and discharge, derives exact grid import, and enforces 2-decimal precision.
+7. **Specification Replay Validator**: Independent oracle auditing the materialized plan against all physics and directive rules before returning HTTP 200.
+
+---
+
+## Limits & Known Gaps
+
+In accordance with `problem.md §17` (Realization Boundary):
+- **Synthetic 24-Hour Scope**: Evaluated exclusively over synthetic 24-hour discrete-hour scenarios. No live campus telemetry, real-time meter feeds, or dynamic multi-day forecasting.
+- **Idealized Battery Physics**: The battery model is lossless and instantaneous. Physical efficiency curves (round-trip losses), inverter clipping, battery thermal dynamics, and cell degradation are out of scope.
+- **Stateless Operation**: The service maintains zero state, databases, message queues, or persistent caches.
+- **Language Boundaries**: The LLM prompt and guardrails are optimized for operational campus energy directives. Notes containing ambiguous text or non-operational commentary safely degrade to `no_op` rather than generating invalid dispatch constraints.

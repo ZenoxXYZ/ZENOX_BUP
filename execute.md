@@ -65,12 +65,12 @@ sufficient.**
 
 | WS | Capability | Owner | Branch | Status | Blockers |
 | --- | --- | --- | --- | --- | --- |
-| WS-01 | API boundary + schemas | M1 | `feat/ws-01-api-contract` | NOT STARTED | — |
-| WS-02 | LLM interpreter | M2 | `feat/ws-02-llm-interpreter` | NOT STARTED | **B1 — no LLM key** |
-| WS-03 | Guardrails + compiler | M2 | `feat/ws-03-guardrails-compiler` | NOT STARTED | WS-02 |
-| WS-04 | Optimizer + materializer | M1 | `feat/ws-04-optimizer-materializer` | NOT STARTED | WS-01, C-3 stub |
-| WS-05 | Replay validator + harness | M3 | pushed to `main` (bootstrap) | **VALIDATOR LOCAL COMPLETE** — harness/scorecard/failure-injection pending | none |
-| WS-06 | Docker, deploy, README, CI | M3 | `feat/ws-06-deploy-docker-readme` | NOT STARTED | WS-01 skeleton; **B2 — no platform account** |
+| WS-01 | API boundary + schemas | M1 | `feat/ws-01-api-contract` | **MERGED** | — |
+| WS-02 | LLM interpreter | M2 | `feat/ws-02-llm-interpreter` | **MERGED & INTEGRATED** | B1 RESOLVED — gemini-3.1-flash-lite default, 8s/8s/6s timeouts, strict enum |
+| WS-03 | Guardrails + compiler | M2 | `main` | **MERGED & INTEGRATED** | D5 repair-first guardrails + C-3 constraint compiler wired |
+| WS-04 | Optimizer + materializer | M1 | `feat/ws-04-optimizer-materializer` | **MERGED** (`1c84661`) | HiGHS LP formulation exact; 1.0000 cost ratio verified |
+| WS-05 | Replay validator + harness | M3 | `main` | **WORKSTREAM COMPLETE** — 207 tests green. Live harness on merged service: Mode A 10/10, Mode B 10/10, Cost Ratio 1.0000, 82.0/83.0 pts. F17 resolved. | none |
+| WS-06 | Docker, deploy, README, CI | M3 | `main` | **CODE COMPLETE (DOCKER UNVERIFIED)** — `Dockerfile`, `.dockerignore`, `ci.yml`, `ghcr.yml`, `.env.example`, `README.md` delivered. Docker daemon offline on host -> local build/run UNVERIFIED. | B2 — HF space / external deployment account |
 
 Integration applicability: all six workstreams require rendezvous. None is `N/A`.
 
@@ -78,8 +78,8 @@ Integration applicability: all six workstreams require rendezvous. None is `N/A`
 
 | ID | Blocker | Impact | Owner | Action |
 | --- | --- | --- | --- | --- |
-| **B1** | No LLM API key exists on any team machine | **Eligibility + 60 points.** Nothing in WS-02/03 can be verified. | M2 | Create a Google AI Studio key and make ONE live structured-output call. ~2 minutes. Report model name, latency, whether JSON-schema mode worked. |
-| **B2** | No deployment platform account; no GHCR package | 20 points, longest lead time | M3 | Create the HF Space, deploy a `/health`-only skeleton, confirm the Actions → GHCR path |
+| ~~**B1**~~ | ~~No LLM API key exists on any team machine~~ | **RESOLVED 2026-09-18.** Gemini + Groq keys supplied by M2, both authenticate, both do structured output. Stored in local `.env` (gitignored, never committed). Measured latency: Groq 0.24-1.27s vs Gemini 11.5-15.4s -> see **F8**, the D4 ladder should likely reverse. See also **F7** (Gemini emits hour ranges, not expanded lists) and **F9** (all providers invent `type` names -- use a strict enum). | M2 | Rotate both keys after the round: they were pasted into a chat transcript. |
+| **B2** | Deployment platform account; GHCR publishing verification | 20 points | M3 | GHCR workflow and Dockerfile created. Local Docker daemon offline -> UNVERIFIED. Public deployment pending HF space setup / remote Actions run. |
 | ~~B3~~ | ~~Member names / GitHub handles unknown~~ | — | M3 | **RESOLVED** — seat order confirmed by human: M1 @abidhasan9538, M2 @ZenoxXYZ, M3 @FMAmax. Satisfies D6 (strongest prompt-engineering person on M2). All three collaborators verified with push access. |
 
 B1 and B2 are the only blockers that can void the entire effort, and both are
@@ -133,3 +133,7 @@ Owner M3. Nothing here is complete until verified from outside our own network.
 | Bootstrap verification | M3 | Pre-push verification pass: `problem.md §19` table mechanically re-checked against the source JSON (10/10), 24 load-bearing spec facts confirmed verbatim against the official sources, secret scan clean, no source code touched. Found and fixed F1 — `review.md` template residue asserting a PostgreSQL foundation and a PR that does not exist in this repo. |
 | Seat confirmation | M3 | Human corrected the provisional M1/M2 order: M1 @abidhasan9538 (WS-01 → WS-04), M2 @ZenoxXYZ (WS-02 → WS-03). Routing files updated to match. |
 | WS-05 part 1 | M3 | `backend/logic/replay.py` landed: both replay modes, schema + physics layers, cascade suppression. `tests/test_replay.py` 50 tests. Green 10/10 reference schedules both modes; red 26 mutation tests; red-green proven by sabotaging three checks and confirming only the dependent tests fail. Deleted three obsolete template tests. Contract C-7 (test-file partition) added to `plan.md`. |
+| WS-05 part 2 | M3 | `tests/harness.py` CLI scorecard and test harness implemented with stdlib fallback, route auto-discovery, Mode A/B verification, latency band calculation, failure resilience, and JSON output. 16 coverage gap and paraphrase fixtures in `tests/fixtures/gap_cases.json`. 28 new tests in `tests/test_replay.py` (78 total) covering C-3 overlap merge rules, 5 failure injection modes, and harness helpers; red-green proven across 6 distinct sabotage mutations. Finding F5 and F6 documented in `review.md`. |
+| WS-04 post-merge & F16/F17 diagnosis | M3 | Measured Mode B pass rate regression from 4/10 to 1/10 post WS-04 merge. Isolated solver test confirmed HiGHS LP formulation is 100% exact (1.0000 cost ratio on all 10 cases, resolving F16). Diagnosed root cause of F17: uncompiled directives due to in-flight WS-02/03. Documented F17 with 1-line reproduction in `review.md`. |
+| WS-06 | M3 | Delivered container and deployment artifacts: `Dockerfile` (python:3.12-slim, non-root appuser uid 1000, dynamic port), `.dockerignore` (venv, git, bytecode, env secrets excluded), `.github/workflows/ci.yml` (reduced to python 3.12 setup, pip install, pytest; postgres/alembic removed), `.github/workflows/ghcr.yml` (GHCR package publish on push/dispatch), `.env.example` (cleaned of postgres residue, documenting provider keys by name only), and comprehensive `README.md` (architecture, API spec, quickstart, Docker commands, harness instructions, credits). Checked local Docker daemon; reported offline (`//./pipe/dockerDesktopLinuxEngine` not found); Docker build/run explicitly recorded as UNVERIFIED. Pytest suite 181 tests green. |
+| WS-02/03 Merge Gate | M3 | Merged WS-02 LLM interpreter with four runtime fixes (gemini-3.1-flash-lite default, 8s/8s/6s timeouts, openai/gpt-oss-120b Groq default, strict enum). Delivered WS-03 guardrails (`backend/logic/guardrails.py`) and constraint compiler (`backend/logic/constraints.py`). Installed `google-genai` and `groq`. All 5 seams wired (`interpret`, `guardrails`, `compiler`, `optimizer`, `replay`). Pytest suite grew to 207 tests, all green. Executed live merge gate on port 8124: Mode A 10/10 PASS, Mode B 10/10 PASS, 1.0000 cost ratio on all 10 cases, 82.0/83.0 measurable points, exit 0. F17 resolved. |
