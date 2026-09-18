@@ -28,6 +28,18 @@ drift, do not guess.
 `backend/logic/constraints.py` (M2) · `backend/logic/replay.py`, `tests/`,
 `Dockerfile`, `README.md`, `.github/workflows/ci.yml` (M3)
 
+## Note on scaffold removal
+
+Your master prompt's scaffold-removal step listed `tests/test_database.py` and
+`tests/test_config.py`. **Skip those — M3 already deleted them** (along with
+`tests/test_app.py`) in WS-05, because `tests/` is M3's directory. Your scaffold
+removal covers non-test files only: `frontend/`, `migrations/`, `alembic.ini`,
+`compose.yaml`, `backend/database.py`, and the `sqlalchemy` / `psycopg` /
+`alembic` entries in `requirements.txt`.
+
+Test-file ownership is contract **C-7** in `plan.md`. Yours are
+`tests/test_api.py` and `tests/test_optimizer.py`.
+
 ## Key references
 
 - Request / response schemas — `problem.md §9`, `§10`
@@ -49,7 +61,7 @@ drift, do not guess.
 ## Standing authorization
 
 Combined Task + Implementation Plan is pre-authorized. Stop for a human decision
-before changing C-1 … C-6 or touching another member's files. Do not commit or
+before changing C-1 … C-7 or touching another member's files. Do not commit or
 push unless explicitly requested.
 
 ## First action
