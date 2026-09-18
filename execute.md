@@ -69,7 +69,7 @@ sufficient.**
 | WS-02 | LLM interpreter | M2 | `feat/ws-02-llm-interpreter` | NOT STARTED | **B1 — no LLM key** |
 | WS-03 | Guardrails + compiler | M2 | `feat/ws-03-guardrails-compiler` | NOT STARTED | WS-02 |
 | WS-04 | Optimizer + materializer | M1 | `feat/ws-04-optimizer-materializer` | NOT STARTED | WS-01, C-3 stub |
-| WS-05 | Replay validator + harness | M3 | pushed to `main` (bootstrap) | **VALIDATOR LOCAL COMPLETE** — harness/scorecard/failure-injection pending | none |
+| WS-05 | Replay validator + harness | M3 | pushed to `main` (bootstrap) | **LOCAL COMPLETE** — harness, gap fixtures, failure injections red-green proven, 78/78 green | none |
 | WS-06 | Docker, deploy, README, CI | M3 | `feat/ws-06-deploy-docker-readme` | NOT STARTED | WS-01 skeleton; **B2 — no platform account** |
 
 Integration applicability: all six workstreams require rendezvous. None is `N/A`.
@@ -133,3 +133,4 @@ Owner M3. Nothing here is complete until verified from outside our own network.
 | Bootstrap verification | M3 | Pre-push verification pass: `problem.md §19` table mechanically re-checked against the source JSON (10/10), 24 load-bearing spec facts confirmed verbatim against the official sources, secret scan clean, no source code touched. Found and fixed F1 — `review.md` template residue asserting a PostgreSQL foundation and a PR that does not exist in this repo. |
 | Seat confirmation | M3 | Human corrected the provisional M1/M2 order: M1 @abidhasan9538 (WS-01 → WS-04), M2 @ZenoxXYZ (WS-02 → WS-03). Routing files updated to match. |
 | WS-05 part 1 | M3 | `backend/logic/replay.py` landed: both replay modes, schema + physics layers, cascade suppression. `tests/test_replay.py` 50 tests. Green 10/10 reference schedules both modes; red 26 mutation tests; red-green proven by sabotaging three checks and confirming only the dependent tests fail. Deleted three obsolete template tests. Contract C-7 (test-file partition) added to `plan.md`. |
+| WS-05 part 2 | M3 | `tests/harness.py` CLI scorecard and test harness implemented with stdlib fallback, route auto-discovery, Mode A/B verification, latency band calculation, failure resilience, and JSON output. 16 coverage gap and paraphrase fixtures in `tests/fixtures/gap_cases.json`. 28 new tests in `tests/test_replay.py` (78 total) covering C-3 overlap merge rules, 5 failure injection modes, and harness helpers; red-green proven across 6 distinct sabotage mutations. Finding F5 and F6 documented in `review.md`. |

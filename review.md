@@ -3,10 +3,16 @@
 Owner: Member 3 (QA / Integration Lead). Requirements: `problem.md`. Design:
 `plan.md`. Live assignments and status: `execute.md`.
 
-## Status: NOTHING VERIFIED YET
+## Status: WS-05 LOCAL COMPLETE — NOTHING VERIFIED END-TO-END
 
-No code has been written for this challenge. No workstream has reached
-`LOCAL COMPLETE`. No PR has been opened. No evidence has been collected.
+WS-05 (replay oracle + integration harness) is `LOCAL COMPLETE`: 78 tests green,
+red-green proven by sabotage, harness exercised against a mock server and a dead
+port. **No workstream is `WORKSTREAM COMPLETE`.** WS-01 to WS-04 are in flight,
+no PR has been opened, and nothing has been verified against a real running
+service or a deployed URL — every such row below still reads UNVERIFIED.
+
+Blocker **B1 is resolved** (both provider keys live, structured output confirmed).
+Blocker **B2 stands**: no deployment target exists.
 
 This file previously contained the starter template's own review content —
 checked-off claims about a PostgreSQL foundation, Alembic migrations and a
@@ -72,6 +78,14 @@ Evidence observed so far, with the command or artifact that produced it.
 | WS-05 | Mode A / Mode B distinction is real | constructed a plan consistent with an all-`no_op` misinterpretation that violates the true `solar_reduction`; Mode A passes, Mode B catches it | PASS |
 | WS-05 | Oracle is independent of other workstreams | `replay.py` imports only `math` and `dataclasses` — nothing from `backend` | PASS |
 | WS-05 | Full suite | `pytest tests/ -q` | PASS 50 passed |
+| WS-05 p2 | Coverage gap fixtures valid | script parsed `tests/fixtures/gap_cases.json` (16 cases covering 3 real directives, solar+reserve co-occurrence, single-hour windows, factor 0.0/1.0, midnight crossing, relative phrasing, distractors, C-3 overlap rules) and validated all requests and directives | PASS 16/16 |
+| WS-05 p2 | Directive compilation merge rules | unit tests in `tests/test_replay.py`: reserve takes max, grid cap takes min, solar reductions take min factor (do not multiply), no-charge and no-discharge union of hours, factor extremes, single-hour, and midnight windows | PASS 11/11 tests |
+| WS-05 p2 | Five failure-injection modes | unit tests in `tests/test_replay.py`: Mode 1 (missing fields, 25h, 4 notes, empty notes, non-dict), Mode 2 (provider 504 timeout, controlled degradation ladder), Mode 3 (unsupported directive type, broken adjustment shape, invariant violations), Mode 4 (infeasible schedule breaches, fallback schedule validation), Mode 5 (stateless determinism, float drift > 0.01 detection) | PASS 13/13 tests |
+| WS-05 p2 | Integration harness error handling & dead port | `.venv\Scripts\python.exe tests/harness.py --url http://localhost:8999 --cases tests/fixtures/public_cases.json`: connection failure gracefully handled with zero crashes, logged root violation per failing case, printed rubric scorecard, exit code 1 | PASS exit 1, 10/10 failed handled |
+| WS-05 p2 | Integration harness against mock server | `.venv\Scripts\python.exe tests/harness.py --url http://127.0.0.1:8976 --cases tests/fixtures/public_cases.json`: all 10 cases Mode B clean, 100.0/100.0 points, cost ratio 1.0000, p50=0.0011s, exit code 0; warning on missing route printed | PASS exit 0, 10/10 clean |
+| WS-05 p2 | Integration harness against gap cases | `.venv\Scripts\python.exe tests/harness.py --url http://127.0.0.1:8979 --cases tests/fixtures/gap_cases.json`: 16 cases evaluated; cases violating grid caps or reserves correctly flagged with root violations; exit code 1 | PASS exit 1, 5/16 expected breaches caught |
+| WS-05 p2 | Red-green verification of new checks | sabotaged reserve max check (mutated to 60.0), solar reduction factor check (mutated to product 0.24), missing scenario_id (asserted valid), provider degradation neutrality (mutated energy), unsupported directive type (mutated to valid), and numerical drift (mutated delta to 0.005 below tolerance); observed RED failures under pytest, then restored | PASS red-green across 6 checks |
+| WS-05 p2 | Full suite | `.venv\Scripts\python.exe -m pytest tests/ -q` | PASS 78 passed in 0.17s |
 
 ## Open QA Findings
 
@@ -81,7 +95,64 @@ Evidence observed so far, with the command or artifact that produced it.
 | F2 | The Member 1 master prompt told M1 to delete two files in `tests/`, which `MEMBER_1.md` and `MEMBER_3.md` both assign to M3 | Medium — M1 would have edited M3's directory | FIXED — files deleted by M3; correction added to `MEMBER_1.md`; contract C-7 added to `plan.md` |
 | F3 | No test-file partition existed, so three members writing into `tests/` would collide | Medium | FIXED — contract C-7 in `plan.md` |
 | F4 | One mutation test was a silent no-op (set two hours to values the reference already held) and could never have failed | High — a test that cannot fail is worse than no test | FIXED — `_mutate` now asserts the response actually changed |
+| F5 | `requests` package is not installed in the `.venv` environment, but `tests/harness.py` was specified to support stdlib fallback | Low — could prevent harness execution in minimal environments | FIXED — `tests/harness.py` implements standard library `urllib.request` as primary/fallback with identical JSON and error handling |
+| F6 | `validate_request`, `replay`, and `recomputed_cost` in `backend/logic/replay.py` did not previously guard against non-dict payloads or check for `scenario_id` non-empty string | Medium — passing malformed or non-dict payloads to oracle could raise unhandled `TypeError` | FIXED — defensive type guards added to `validate_request`, `replay`, and `recomputed_cost` |
 
 ## QA Queue
 
 Empty. No open PRs.
+
+## Control Room Verification Log — WS-05 part 2 + blocker B1
+
+| # | Claim | Command | Real output | Verdict |
+| --- | --- | --- | --- | --- |
+| 11 | Harness suite is green | `python -m pytest tests/ -q` | `78 passed in 0.11s` (was 50) | PASS |
+| 12 | New merge tests can actually fail | line 296 `min(...)` -> `eff[h] * factor` (the multiply trap), rerun | `1 failed, 77 passed` — only `test_compile_constraints_solar_reductions_take_min_factor_not_product` | PASS (red-green) |
+| 13 | Reserve-max tests can actually fail | line 299 `max(...)` -> `min(...)`, rerun | `3 failed, 75 passed` — reserves_take_max, three_simultaneous_real_directives, solar_and_reserve_cooccurrence | PASS (red-green) |
+| 14 | Sabotage fully reverted | `cmp /tmp/replay.bak backend/logic/replay.py` | identical; `78 passed` | PASS |
+| 15 | No cross-member file touched | `git status --porcelain` filtered to non-M3 paths | empty | PASS |
+| 16 | Gemini key valid | `GET /v1beta/models` | HTTP 200, 40+ models listed | PASS |
+| 17 | Gemini structured output works | `generateContent` + `responseSchema`, gemini-3.1-flash-lite | HTTP 200, valid JSON object returned | PASS |
+| 18 | Groq key valid | `GET /openai/v1/models` | HTTP 200, 13 models listed | PASS |
+| 19 | Groq structured output works | `chat/completions` + `response_format=json_object` | HTTP 200 on gpt-oss-120b, gpt-oss-20b, qwen3.8-27b | PASS |
+| 20 | Measured provider latency | one warm call each, `curl -w time_total` | Groq qwen3.8-27b **0.24s**, gpt-oss-120b **1.27s**, gpt-oss-20b 0.91s · Gemini 3.1-flash-lite **11.5s / 15.4s** | PASS (measured) |
+| 21 | Deployment reachable | — | not attempted | **UNVERIFIED** |
+| 22 | End-to-end harness against a live server | — | no server running yet (WS-01..WS-04 in flight) | **UNVERIFIED** |
+
+**B1 RESOLVED.** Both provider keys authenticate and both do structured output. Stored in local `.env`, confirmed ignored by `.gitignore:15` and absent from `git status`.
+
+## Open QA Findings (continued)
+
+**F7 — Gemini emits `hours` as a `[start, end]` RANGE, not the expanded list.** For
+"reduce solar by 80% from 1 PM to 3 PM" gemini-3.1-flash-lite returned
+`hours: [13, 15]`. Our C-2 contract requires the expanded end-exclusive list
+`[13, 14]`. Every Groq model returned `[13, 14]` correctly on the same wording.
+*Impact:* silently wrong hour sets on every window directive — that is the 25-pt
+interpretation pool plus replay invalidation. *Action (M2):* state "explicit list
+of every affected hour integer" in the prompt and validate cardinality in the
+guardrail. Do not assume a two-element list is a range or a pair.
+
+**F8 — the D4 provider ladder should be reversed on measured latency.** Groq is
+10-60x faster than Gemini here (0.24-1.27s vs 11.5-15.4s) and got the hour
+expansion right where Gemini did not. Latency is 3 scored points and a timeout
+counts as a case failure. *Action (M2):* consider Groq primary, Gemini fallback.
+This is M2's decision under D4 — recorded as evidence, not changed.
+
+**F9 — all providers invent `type` names.** Observed: `solar_output_reduction`
+(Gemini, Groq 120b, qwen) and `solar` (Groq 20b). None emitted the contract's
+`solar_reduction`. *Action (M2):* the response schema must declare `type` as a
+strict **enum of the six directive types**, not a free string. This is a
+one-line schema fix that removes an entire failure class.
+
+**F10 — `recomputed_cost` returns `0.0` on malformed input** (`replay.py:522,526`).
+A silent zero reads as an infinitely good cost ratio in the harness scorecard.
+*Action (M3):* the harness must gate the cost row on schema validity first.
+Present behaviour is safe only because the schema layer runs before scoring.
+
+**F11 — `gemini-2.5-flash` is dead for this key:** HTTP 404, *"no longer available
+to new users."* Any config or doc naming it will fail closed. `.env` now pins a
+live model name.
+
+**F12 — `.env.example` is PostgreSQL template residue** and documents
+`DATABASE_URL`/Docker Compose, none of which this service uses. Same class as F1.
+*Action:* WS-06.

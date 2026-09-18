@@ -130,6 +130,12 @@ def _hours_problem(hours: object, label: str) -> str | None:
 def validate_request(request: dict) -> list[str]:
     """Contract C-1. Used by the harness; the API enforces this with Pydantic."""
     v: list[str] = []
+    if not isinstance(request, dict):
+        return ["request: must be a JSON object"]
+
+    if not isinstance(request.get("scenario_id"), str) or not request["scenario_id"].strip():
+        v.append("request: scenario_id must be a non-empty string")
+
     notes = request.get("operator_notes")
     if not isinstance(notes, list) or not 1 <= len(notes) <= 3:
         v.append("request: operator_notes must be a list of 1-3 entries")
@@ -140,8 +146,17 @@ def validate_request(request: dict) -> list[str]:
     if not isinstance(hours, list) or len(hours) != 24:
         v.append("request: hours must contain exactly 24 entries")
     else:
-        got = sorted(h.get("hour") for h in hours)
-        if got != list(range(24)):
+        got = []
+        for i, h in enumerate(hours):
+            if not isinstance(h, dict):
+                v.append("request: hours[{}] must be an object".format(i))
+            else:
+                val = h.get("hour")
+                if isinstance(val, bool) or not isinstance(val, int):
+                    v.append("request: hours[{}].hour must be an integer".format(i))
+                else:
+                    got.append(val)
+        if sorted(got) != list(range(24)):
             v.append("request: hour values must be exactly 0-23, unique")
 
     battery = request.get("battery")
@@ -318,6 +333,11 @@ def replay(request: dict, response: dict, directives: list | None = None) -> Rep
     Passing ``directives`` replays against ground truth (Mode B).
     """
     v: list[str] = []
+
+    if not isinstance(request, dict):
+        return ReplayResult(False, ["request: must be a JSON object"])
+    if not isinstance(response, dict):
+        return ReplayResult(False, ["response: must be a JSON object"])
 
     for name in _TOP_LEVEL_FIELDS:
         if name not in response:
@@ -498,5 +518,19 @@ def replay(request: dict, response: dict, directives: list | None = None) -> Rep
 
 def recomputed_cost(request: dict, response: dict) -> float:
     """Grid cost recomputed from hourly_plan -- the judge's cost, not ours."""
-    tariff = {h["hour"]: float(h["tariff_bdt_per_kwh"]) for h in request["hours"]}
-    return sum(float(p["grid_kwh"]) * tariff[p["hour"]] for p in response["hourly_plan"])
+    if not isinstance(request, dict) or not isinstance(response, dict):
+        return 0.0
+    hours = request.get("hours", [])
+    plan = response.get("hourly_plan", [])
+    if not isinstance(hours, list) or not isinstance(plan, list):
+        return 0.0
+    tariff = {
+        h["hour"]: float(h["tariff_bdt_per_kwh"])
+        for h in hours
+        if isinstance(h, dict) and "hour" in h and _is_num(h.get("tariff_bdt_per_kwh"))
+    }
+    cost = 0.0
+    for p in plan:
+        if isinstance(p, dict) and "hour" in p and _is_num(p.get("grid_kwh")):
+            cost += float(p["grid_kwh"]) * tariff.get(p["hour"], 0.0)
+    return cost
