@@ -50,8 +50,8 @@ not a wall.
 
 | Member | Name / GitHub | Primary | Then | Cross-cutting |
 | --- | --- | --- | --- | --- |
-| **M1** | [@ZenoxXYZ](https://github.com/ZenoxXYZ) | **WS-01** API boundary, schemas, error handling, scaffold removal | **WS-04** LP optimizer + materializer | owns C-1 and C-4 shapes |
-| **M2** | [@abidhasan9538](https://github.com/abidhasan9538) | **WS-02** LLM interpreter | **WS-03** guardrails + constraint compiler | owns the prompt; holds both sides of the untrusted boundary |
+| **M1** | [@abidhasan9538](https://github.com/abidhasan9538) | **WS-01** API boundary, schemas, error handling, scaffold removal | **WS-04** LP optimizer + materializer | owns C-1 and C-4 shapes |
+| **M2** | [@ZenoxXYZ](https://github.com/ZenoxXYZ) | **WS-02** LLM interpreter | **WS-03** guardrails + constraint compiler | owns the prompt; holds both sides of the untrusted boundary |
 | **M3** | [@FMAmax](https://github.com/FMAmax) | **WS-05** replay validator + harness | **WS-06** Docker, GHCR, deployment, README, CI | QA / Integration Lead · PR reviewer · owns `execute.md` + `review.md` · rendezvous · post-merge verification |
 
 Collaborator invites must be **accepted** before M1 and M2 can push. Confirm this
@@ -80,7 +80,7 @@ Integration applicability: all six workstreams require rendezvous. None is `N/A`
 | --- | --- | --- | --- | --- |
 | **B1** | No LLM API key exists on any team machine | **Eligibility + 60 points.** Nothing in WS-02/03 can be verified. | M2 | Create a Google AI Studio key and make ONE live structured-output call. ~2 minutes. Report model name, latency, whether JSON-schema mode worked. |
 | **B2** | No deployment platform account; no GHCR package | 20 points, longest lead time | M3 | Create the HF Space, deploy a `/health`-only skeleton, confirm the Actions → GHCR path |
-| ~~B3~~ | ~~Member names / GitHub handles unknown~~ | — | M3 | **RESOLVED** — handles filled in §3 and all three routing files. **M1/M2 seat order is provisional**: assigned in the order supplied. D6 puts the strongest prompt-engineering person on M2 (60 pts cascade) — swap if that is @ZenoxXYZ. |
+| ~~B3~~ | ~~Member names / GitHub handles unknown~~ | — | M3 | **RESOLVED** — seat order confirmed by human: M1 @abidhasan9538, M2 @ZenoxXYZ, M3 @FMAmax. Satisfies D6 (strongest prompt-engineering person on M2). All three collaborators verified with push access. |
 
 B1 and B2 are the only blockers that can void the entire effort, and both are
 resolvable in under fifteen minutes. They precede all building.
@@ -131,3 +131,4 @@ Owner M3. Nothing here is complete until verified from outside our own network.
 | --- | --- | --- |
 | Design review | M3 / Control Room | Repository reconstructed. Three official sources ingested. All 10 public cases parsed. Challenge classified (not Product Build). D1–D8 locked. `problem.md`, `plan.md`, `execute.md` and member routing written from the approved Control Room report. No branches created, no code written. |
 | Bootstrap verification | M3 | Pre-push verification pass: `problem.md §19` table mechanically re-checked against the source JSON (10/10), 24 load-bearing spec facts confirmed verbatim against the official sources, secret scan clean, no source code touched. Found and fixed F1 — `review.md` template residue asserting a PostgreSQL foundation and a PR that does not exist in this repo. |
+| Seat confirmation | M3 | Human corrected the provisional M1/M2 order: M1 @abidhasan9538 (WS-01 → WS-04), M2 @ZenoxXYZ (WS-02 → WS-03). Routing files updated to match. |

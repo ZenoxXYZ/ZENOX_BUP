@@ -9,7 +9,7 @@ drift, do not guess.
 
 | | |
 | --- | --- |
-| Name / GitHub | [@abidhasan9538](https://github.com/abidhasan9538) |
+| Name / GitHub | [@ZenoxXYZ](https://github.com/ZenoxXYZ) |
 | Role | Builder — highest-weighted seat on the team |
 | Current assignment | **WS-02** — LLM interpreter: client, prompt, structured output, batching, timeout/retry/fallback, cache |
 | Then | **WS-03** — deterministic guardrail validator + constraint compiler |

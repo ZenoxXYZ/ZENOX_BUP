@@ -9,7 +9,7 @@ drift, do not guess.
 
 | | |
 | --- | --- |
-| Name / GitHub | [@ZenoxXYZ](https://github.com/ZenoxXYZ) |
+| Name / GitHub | [@abidhasan9538](https://github.com/abidhasan9538) |
 | Role | Builder |
 | Current assignment | **WS-01** — API boundary, request/response models, error handling, response assembly, scaffold removal |
 | Then | **WS-04** — LP optimizer + plan materializer |
