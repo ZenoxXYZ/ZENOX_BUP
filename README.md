@@ -8,54 +8,97 @@ app_port: 7860
 pinned: false
 ---
 
-# GridWise — LLM-Assisted Energy Optimization Service
+# GridWise
 
-[![CI](https://github.com/FMAmax/ZENOX_BUP/actions/workflows/ci.yml/badge.svg)](https://github.com/FMAmax/ZENOX_BUP/actions/workflows/ci.yml)
-[![GHCR Container Publish](https://github.com/FMAmax/ZENOX_BUP/actions/workflows/ghcr.yml/badge.svg)](https://github.com/FMAmax/ZENOX_BUP/actions/workflows/ghcr.yml)
+[![CI](https://github.com/ZenoxXYZ/ZENOX_BUP/actions/workflows/ci.yml/badge.svg)](https://github.com/ZenoxXYZ/ZENOX_BUP/actions/workflows/ci.yml)
+[![GHCR](https://github.com/ZenoxXYZ/ZENOX_BUP/actions/workflows/ghcr.yml/badge.svg)](https://github.com/ZenoxXYZ/ZENOX_BUP/actions/workflows/ghcr.yml)
 
-GridWise is an autonomous, deterministic, LLM-assisted microgrid energy dispatch service for 24-hour campus scenarios under time-of-use tariffs and natural-language operator notes, developed for the **BUP CSE FEST 2026 Hackathon**. The service receives a 24-hour campus scenario (battery parameters, solar capacity, grid connection limits, tariffs, and forecasts) together with 1–3 natural-language operator notes; translates the operator memos into validated structured directives using a generative language model backed by a robust fallback ladder; compiles these directives into physical constraints; and optimizes battery charging, discharging, and grid import using a continuous linear program (HiGHS via SciPy) to produce a cost-minimizing, physically feasible 24-hour dispatch schedule.
+**GridWise** is a stateless, LLM-assisted energy-dispatch API for the BUP CSE FEST 2026 Hackathon. Given a 24-hour campus-energy scenario and one to three operator notes, it interprets the notes into safe structured directives, compiles the resulting constraints, and returns a least-cost, physically feasible dispatch plan.
 
----
+It is deliberately small: one FastAPI service, a deterministic optimization core, and no database, queue, cache, or persistent state.
 
-## POST /optimize-energy Contract & API Specification
+## What it does
 
-The service exposes two HTTP endpoints:
-- `GET /health` — Readiness and liveness probe returning `{"status":"ok"}` (guaranteed ready in <60 seconds cold).
-- `POST /optimize-energy` — Main optimization endpoint returning validated directive interpretations and 24-hour hourly schedule.
+```text
+24-hour scenario + operator notes
+             │
+             ▼
+     LLM interpretation ladder
+             │
+             ▼
+   deterministic guardrails
+             │
+             ▼
+      constraint compiler
+             │
+             ▼
+ SciPy / HiGHS linear optimizer
+             │
+             ▼
+ independent replay validation
+             │
+             ▼
+ validated 24-hour dispatch plan
+```
 
-### Request Payload Contract
+The service supports these operator directives:
 
-The request requires 24 hourly intervals for `grid_tariff_bdt_per_kwh`, `hourly_demand_kwh`, and `hourly_solar_kwh`, along with 1–3 `operator_notes`:
+| Directive | Effect |
+| --- | --- |
+| `solar_reduction` | Reduces usable solar energy for selected hours. |
+| `minimum_battery_reserve` | Raises the minimum battery energy for selected hours. |
+| `no_charge_window` | Prevents charging in selected hours. |
+| `no_discharge_window` | Prevents discharging in selected hours. |
+| `max_grid_window` | Caps grid import for selected hours. |
+| `no_op` | Represents a note with no applicable operational effect. |
+
+Time windows are start-inclusive and end-exclusive. Solar factors represent the fraction of forecast energy that remains available.
+
+## API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Readiness probe. Returns `{"status":"ok"}`. |
+| `POST` | `/optimize-energy` | Interprets notes and returns a 24-hour dispatch plan. |
+
+Interactive OpenAPI documentation is available at `/docs` while the service is running.
+
+### Request contract
+
+`POST /optimize-energy` accepts:
 
 ```json
 {
-  "scenario_id": "SAMPLE-01",
+  "scenario_id": "string",
+  "operator_notes": ["string"],
+  "hours": [
+    {
+      "hour": 0,
+      "demand_kwh": 0,
+      "solar_kwh": 0,
+      "tariff_bdt_per_kwh": 0
+    }
+  ],
   "battery": {
-    "capacity_kwh": 200.0,
-    "current_charge_kwh": 80.0,
-    "max_charge_rate_kw": 50.0,
-    "max_discharge_rate_kw": 50.0,
-    "min_charge_pct": 20.0
-  },
-  "site_parameters": {
-    "solar_capacity_kw": 250.0,
-    "grid_connection_limit_kw": 400.0
-  },
-  "tariffs": {
-    "grid_tariff_bdt_per_kwh": [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 14.0, 14.0, 14.0, 14.0, 14.0, 8.0, 5.0]
-  },
-  "forecasts": {
-    "hourly_demand_kwh": [60.0, 55.0, 50.0, 50.0, 52.0, 65.0, 90.0, 120.0, 150.0, 180.0, 200.0, 210.0, 215.0, 210.0, 195.0, 170.0, 140.0, 160.0, 180.0, 175.0, 150.0, 120.0, 90.0, 70.0],
-    "hourly_solar_kwh": [0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 25.0, 60.0, 110.0, 155.0, 180.0, 195.0, 180.0, 150.0, 105.0, 55.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  },
-  "operator_notes": [
-    "Peak hours tonight will face higher transmission stress; please keep battery reserve at or above 45% between 17:00 and 22:00.",
-    "Cloud cover alert: expect solar output to drop to 25% of forecast between 11:00 and 14:00."
-  ]
+    "capacity_kwh": 0,
+    "initial_energy_kwh": 0,
+    "minimum_energy_kwh": 0,
+    "max_charge_kwh_per_hour": 0,
+    "max_discharge_kwh_per_hour": 0
+  }
 }
 ```
 
-### Response Payload Contract
+Rules enforced at the API boundary:
+
+- `operator_notes` contains 1–3 non-blank strings.
+- `hours` contains exactly one entry for every hour `0` through `23`; input order is accepted, but planning is performed chronologically.
+- Energy, tariff, and battery values are finite, non-negative numbers.
+- Structurally invalid requests return `400` with an `invalid_request` payload.
+
+### Response contract
+
+Every successful response has these top-level fields:
 
 ```json
 {
@@ -66,20 +109,10 @@ The request requires 24 hourly intervals for `grid_tariff_bdt_per_kwh`, `hourly_
       "applies": true,
       "directive_type": "minimum_battery_reserve",
       "structured_adjustment": {
-        "minimum_energy_kwh": 90.0,
-        "hours": [17, 18, 19, 20, 21]
+        "hours": [17, 18, 19, 20, 21],
+        "minimum_energy_kwh": 90.0
       },
-      "explanation": "Maintain at least 45% (90 kWh) battery reserve between 17:00 and 22:00."
-    },
-    {
-      "note_index": 1,
-      "applies": true,
-      "directive_type": "solar_reduction",
-      "structured_adjustment": {
-        "factor": 0.25,
-        "hours": [11, 12, 13]
-      },
-      "explanation": "Solar output reduced to 25% between 11:00 and 14:00."
+      "explanation": "Maintain a 90 kWh reserve during the specified period."
     }
   ],
   "hourly_plan": [
@@ -95,205 +128,161 @@ The request requires 24 hourly intervals for `grid_tariff_bdt_per_kwh`, `hourly_
   "total_grid_kwh": 1820.0,
   "total_cost_bdt": 16450.0,
   "peak_grid_kwh": 215.0,
-  "plan_summary": "24-hour optimal dispatch generated with HiGHS LP solver."
+  "plan_summary": "Scheduled 24 hours against applicable operator directives."
 }
 ```
 
-### Copy-Pasteable cURL Example
+`hourly_plan` always contains the hours `0`–`23` in ascending order. `no_op` is the only directive that may have `applies: false`, and it always has `structured_adjustment: null`.
 
-```bash
-curl -X POST http://localhost:7860/optimize-energy \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scenario_id": "SAMPLE-01",
-    "battery": {
-      "capacity_kwh": 200.0,
-      "current_charge_kwh": 80.0,
-      "max_charge_rate_kw": 50.0,
-      "max_discharge_rate_kw": 50.0,
-      "min_charge_pct": 20.0
-    },
-    "site_parameters": {
-      "solar_capacity_kw": 250.0,
-      "grid_connection_limit_kw": 400.0
-    },
-    "tariffs": {
-      "grid_tariff_bdt_per_kwh": [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 14.0, 14.0, 14.0, 14.0, 14.0, 8.0, 5.0]
-    },
-    "forecasts": {
-      "hourly_demand_kwh": [60.0, 55.0, 50.0, 50.0, 52.0, 65.0, 90.0, 120.0, 150.0, 180.0, 200.0, 210.0, 215.0, 210.0, 195.0, 170.0, 140.0, 160.0, 180.0, 175.0, 150.0, 120.0, 90.0, 70.0],
-      "hourly_solar_kwh": [0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 25.0, 60.0, 110.0, 155.0, 180.0, 195.0, 180.0, 150.0, 105.0, 55.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    },
-    "operator_notes": [
-      "Peak hours tonight will face higher transmission stress; please keep battery reserve at or above 45% between 17:00 and 22:00.",
-      "Cloud cover alert: expect solar output to drop to 25% of forecast between 11:00 and 14:00."
-    ]
-  }'
-```
+## Quick start
 
----
+### Prerequisites
 
-## Local Quickstart
-
-Follow these steps to run GridWise locally on a clean machine:
-
-### 1. Prerequisites
 - Python 3.12+
-- Git
+- Optional: Docker, for containerized execution
+- A Gemini API key for the primary interpretation path; a Groq key is optional but recommended as the secondary provider
 
-### 2. Clone Repository
-```bash
-git clone https://github.com/FMAmax/ZENOX_BUP.git
+### Run locally
+
+```powershell
+git clone https://github.com/ZenoxXYZ/ZENOX_BUP.git
 cd ZENOX_BUP
-```
-
-### 3. Virtual Environment Setup
-Create and activate an isolated virtual environment:
-```bash
-# Windows (PowerShell):
 python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-# Linux / macOS:
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 4. Install Runtime Dependencies
-Install the lean runtime dependencies:
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 5. Configure Environment Variables
-Copy `.env.example` to `.env` and fill in your API credentials:
-```bash
-cp .env.example .env
-```
-Set your `GEMINI_API_KEY` (and optionally `GROQ_API_KEY`). Note: never commit `.env` to Git.
-
-### 6. Start the Service
-```bash
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt -r requirements-dev.txt
+Copy-Item .env.example .env
 uvicorn backend.main:app --host 0.0.0.0 --port 7860
 ```
 
-### 7. Verify Health Probe
-```bash
-curl http://127.0.0.1:7860/health
-# Expected output: {"status":"ok"}
+On macOS or Linux, activate the environment with `source .venv/bin/activate`.
+
+Set the provider keys in `.env` before starting the service:
+
+```dotenv
+GEMINI_API_KEY=your_gemini_key
+GEMINI_MODEL=gemini-3.1-flash-lite
+GROQ_API_KEY=your_groq_key
+GROQ_MODEL=openai/gpt-oss-120b
 ```
 
----
+Never commit `.env` or paste live keys into issues, pull requests, logs, or screenshots.
 
-## Docker Build and Execution
+Verify the service:
 
-GridWise runs as a single-stage, non-root container based on `python:3.12-slim`. **No secrets or keys are baked into any image layer**; API keys arrive exclusively as runtime environment variables.
-
-### Build Local Image
-```bash
-docker build -t gridwise:latest .
+```powershell
+Invoke-RestMethod http://127.0.0.1:7860/health
 ```
 
-### Run Container with Runtime Keys
-Pass environment variables using `-e` flags or `--env-file`:
+Expected result:
 
-```bash
-# Option A: Passing variables directly
-docker run --rm -p 7860:7860 \
-  -e GEMINI_API_KEY="your_gemini_api_key_here" \
-  -e GEMINI_MODEL="gemini-3.1-flash-lite" \
-  -e GROQ_API_KEY="your_groq_api_key_here" \
-  -e GROQ_MODEL="qwen3.8-27b" \
-  gridwise:latest
-
-# Option B: Passing via .env file
-docker run --rm -p 7860:7860 --env-file .env gridwise:latest
+```json
+{"status":"ok"}
 ```
 
-### Verify Container Health
-```bash
-curl http://localhost:7860/health
+### Send a sample request
+
+The following PowerShell snippet creates a valid 24-hour request and posts it to the local service.
+
+```powershell
+$hours = 0..23 | ForEach-Object {
+  [ordered]@{
+    hour = $_
+    demand_kwh = 100.0
+    solar_kwh = $(if ($_ -ge 8 -and $_ -le 16) { 45.0 } else { 0.0 })
+    tariff_bdt_per_kwh = $(if ($_ -ge 17 -and $_ -le 21) { 14.0 } else { 5.0 })
+  }
+}
+
+$payload = @{
+  scenario_id = "demo-001"
+  operator_notes = @("Keep at least 45% battery reserve from 17:00 until 22:00.")
+  hours = $hours
+  battery = @{
+    capacity_kwh = 200.0
+    initial_energy_kwh = 100.0
+    minimum_energy_kwh = 40.0
+    max_charge_kwh_per_hour = 50.0
+    max_discharge_kwh_per_hour = 50.0
+  }
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:7860/optimize-energy `
+  -ContentType "application/json" `
+  -Body $payload
 ```
 
-### Pulling from GitHub Container Registry (GHCR Fallback)
-The automated GitHub Actions workflow pushes pre-built images to GHCR on each push to `main`:
-```bash
-docker pull ghcr.io/fmamax/zenox_bup:latest
-docker run --rm -p 7860:7860 --env-file .env ghcr.io/fmamax/zenox_bup:latest
-```
+## Architecture and safety
 
----
+The pipeline is designed so that text interpretation cannot directly produce an unsafe schedule:
 
-## Testing and Evaluation Harness
+1. **Schema gate** validates the HTTP request with Pydantic.
+2. **LLM interpreter** processes the complete note set in a batched request, using Gemini first, then a strict Gemini retry, then Groq.
+3. **Guardrails** validate directive type, hour semantics, factors, reserve values, and the `no_op` invariant.
+4. **Constraint compiler** turns valid directives into per-hour optimization bounds.
+5. **HiGHS LP solver** minimizes grid cost while respecting energy balance, capacity, rate, grid-cap, and end-of-day neutrality constraints.
+6. **Materializer** builds the public hourly plan and recomputes its totals.
+7. **Replay validator** independently checks the returned plan before it is served.
 
-### 1. Install Development / Test Dependencies
-Test-only dependencies (`pytest`, `httpx`) are decoupled from production and kept in `requirements-dev.txt`:
-```bash
-pip install -r requirements-dev.txt
-```
+If an external provider or a non-critical stage is unavailable, the service uses a controlled degradation path: affected notes become canonical `no_op` directives and a valid baseline schedule is returned. This keeps the API reliable, but a configured LLM path is required for the challenge's intended, directive-aware operation.
 
-### 2. Run the Unit & Replay Test Suite
-Run the 181-test suite covering contract shapes, LP constraints, mutation Sabotage tests, and guardrail validations:
-```bash
+## Testing and evaluation
+
+Install the development dependencies, then run the complete repository test suite:
+
+```powershell
 pytest tests/ -q
+python -m compileall -q backend
 ```
 
-### 3. Run the Evaluation Harness against a URL
-Execute the independent verification harness against a local server or deployed Hugging Face Space:
+The independent harness can score a running service against the public cases:
 
-```bash
+```powershell
 python tests/harness.py --url http://127.0.0.1:7860 --cases tests/fixtures/public_cases.json
 ```
 
-The harness performs:
-- **Readiness check**: Measures cold-start connectivity to `/health`.
-- **Latency profiling**: Measures p50 and p95 latency over repeated queries.
-- **Mode A verification (Self-consistency)**: Verifies that `hourly_plan` satisfies all directives returned in `directive_interpretation`.
-- **Mode B verification (Ground truth)**: Verifies that `hourly_plan` satisfies the official organizer ground-truth directives from the public test set.
-- **Cost ratio analysis**: Compares computed schedule cost against reference HiGHS LP optima (`our_cost / ref_cost`).
-- **Rubric scorecard**: Emits a detailed 100-point evaluation breakdown.
+The harness checks readiness, response shape, replay validity, ground-truth directive compliance, optimization cost ratio, and observed latency. Its score is evidence, not a substitute for the organizer's evaluation.
 
----
+## Docker
 
-## Environment Variables & Security Policy
+Build and run the service without baking secrets into the image:
 
-GridWise requires no database. Configuration is supplied strictly through environment variables:
+```powershell
+docker build -t gridwise:latest .
+docker run --rm -p 7860:7860 --env-file .env gridwise:latest
+```
 
-| Variable Name | Description | Required | Example / Default |
-| --- | --- | --- | --- |
-| `GEMINI_API_KEY` | Google AI Studio API Key | Yes (for primary LLM interpretation) | Placeholder only: `your_gemini_key` |
-| `GEMINI_MODEL` | Google Gemini model name | No | `gemini-3.1-flash-lite` |
-| `GROQ_API_KEY` | Groq Cloud API Key | Optional (for secondary fallback inference) | Placeholder only: `your_groq_key` |
-| `GROQ_MODEL` | Groq model identifier | No | `qwen3.8-27b` |
-| `PORT` | Web server listen port | No | Default `7860` (auto-configured on HF Spaces) |
+Then browse to `http://127.0.0.1:7860/docs` or call `/health`.
 
-### Security Policy
-- **Zero Secrets in Repository & Image**: Secrets are strictly gitignored via `.gitignore` and excluded from containers via `.dockerignore`. Never commit `.env` or hardcode API keys.
-- **Runtime-Only Injection**: In Docker, credentials are provided only via `--env-file` or `-e` environment injection at container run time.
-- **Sanitized Wire Responses**: Exceptions log full stack traces internally to stderr, returning opaque `{"error": "internal_error", ...}` payloads to clients. No API key, token, or internal trace is ever leaked on the wire.
-- **Controlled Degradation Ladder**: If both LLM providers fail or time out, directives safely degrade to `no_op` rather than crashing with HTTP 500, guaranteeing a valid base-rule schedule.
+## Constraints and scope
 
----
+- The service is evaluated on synthetic, discrete 24-hour scenarios.
+- Battery behavior is idealized: no efficiency curve, thermal model, degradation model, grid export, or multi-day state.
+- It is intentionally stateless and has **no database**.
+- Ambiguous or irrelevant notes safely degrade to `no_op`; they are not treated as implicit operational instructions.
+- HTTP `500` responses are opaque and never intentionally include stack traces, provider keys, or environment values.
 
-## Architecture Overview
+## Repository map
 
-GridWise implements a deterministic 7-stage sequential pipeline designed for correctness, safety, and sub-second execution:
+```text
+backend/
+  main.py                 FastAPI application and error boundaries
+  routes/                 HTTP orchestration and optional-stage seams
+  schemas/                Request, response, and constraint contracts
+  services/               LLM interpreter and prompt construction
+  logic/                  Guardrails, LP solver, materialization, replay
+tests/                    API, interpreter, constraints, optimizer, replay, harness
+docs/challenge/           Challenge sources and public sample cases
+problem.md                Approved challenge interpretation
+plan.md                   Approved system design and contracts
+execute.md                Live execution and verification record
+review.md                 Independent findings and verification history
+```
 
-1. **API Boundary & Schema Gate**: Strict Pydantic v2 validation enforcing contract C-1. Structurally malformed requests immediately receive HTTP 400 (never 422 or 500).
-2. **Batched LLM Interpretation**: A single batched prompt passes all 1–3 operator notes to the LLM (primary: Google Gemini `gemini-3.1-flash-lite`; secondary: Groq `qwen3.8-27b`). Structured JSON schema enforcement ensures schema compliance.
-3. **Deterministic Guardrails**: Normalizes LLM outputs (expanding hour ranges `[start, end]` into sequential hour arrays, validating `0 <= factor <= 1`, verifying reserve bounds) and rejects invented directive types.
-4. **Constraint Compiler**: Merges normalized directives into per-hour lower/upper bounds (`min(factor)` for solar, `max(reserve)` for battery, set union for no-charge / no-discharge windows, `min(cap)` for grid imports).
-5. **Continuous Linear Program (HiGHS LP)**: Uses `scipy.optimize.linprog` with the HiGHS solver to minimize 24-hour total grid energy cost subject to energy balance, battery capacity, maximum charge/discharge rates, and net-neutral end-of-day battery energy ($E_{23} = E_{\text{initial}}$).
-6. **Materializer & Accounting**: Eliminates simultaneous charge and discharge, derives exact grid import, and enforces 2-decimal precision.
-7. **Specification Replay Validator**: Independent oracle auditing the materialized plan against all physics and directive rules before returning HTTP 200.
+## Development notes
 
----
+The repository's implementation truth is code, tests, Git history, and verified runtime evidence. `problem.md` defines the approved challenge interpretation; `plan.md` records the design; `execute.md` and `review.md` record execution and review evidence.
 
-## Limits & Known Gaps
-
-In accordance with `problem.md §17` (Realization Boundary):
-- **Synthetic 24-Hour Scope**: Evaluated exclusively over synthetic 24-hour discrete-hour scenarios. No live campus telemetry, real-time meter feeds, or dynamic multi-day forecasting.
-- **Idealized Battery Physics**: The battery model is lossless and instantaneous. Physical efficiency curves (round-trip losses), inverter clipping, battery thermal dynamics, and cell degradation are out of scope.
-- **Stateless Operation**: The service maintains zero state, databases, message queues, or persistent caches.
-- **Language Boundaries**: The LLM prompt and guardrails are optimized for operational campus energy directives. Notes containing ambiguous text or non-operational commentary safely degrade to `no_op` rather than generating invalid dispatch constraints.
+No database migrations, SQLAlchemy models, PostgreSQL service, or Alembic workflow are required for GridWise.
