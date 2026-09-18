@@ -1,66 +1,50 @@
-"""WS-03 constraint compiler: trusted directives to per-hour numeric bounds.
-
-This is deliberately a thin adapter over `backend.logic.replay.compile_constraints`
-rather than a second implementation of the same rules. That function already
-implements the contract C-3 merge semantics and has been verified end to end:
-driving M1's `solve()` and `materialize()` with the bounds it produces, from the
-organizer's ground-truth directives, replays clean in Mode B on all ten public
-cases at cost ratio 1.0000 (`review.md`, verification log rows 33-36).
-
-Two implementations of one rule set is two chances to disagree, and the merge
-rules are exactly where a disagreement would be invisible until the judge ran.
-So there is one implementation, and this wires the seam to it.
-
-Merge rules, for the record (contract C-3): reserves take the **maximum**, grid
-caps the **minimum**, and two `solar_reduction`s on the same hour take the
-**minimum factor** and are never multiplied -- multiplying two independent 0.5s
-to 0.25 over-reduces and could tighten the ceiling below what the judge computes.
-"""
+"""Compile trusted C-2 directives into the shared C-3 constraint set."""
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Sequence
 
-from backend.logic.replay import compile_constraints as _compile_bounds
-from backend.schemas.constraints import ConstraintSet
+from backend.logic.guardrails import Directive
+from backend.schemas.constraints import ConstraintSet, default_constraint_set
 from backend.schemas.scenario import ScenarioRequest
-
-_BOUND_FIELDS = ("eff_solar", "charge_ub", "discharge_ub", "grid_ub", "energy_lb")
-
-
-def _as_request_dict(request: ScenarioRequest) -> dict[str, Any]:
-    """The plain-dict view the oracle expects (contract C-6 takes dicts, not models)."""
-    battery = request.battery
-    return {
-        "hours": [
-            {"hour": entry.hour, "solar_kwh": float(entry.solar_kwh)}
-            for entry in request.hours_ascending()
-        ],
-        "battery": {
-            "capacity_kwh": float(battery.capacity_kwh),
-            "minimum_energy_kwh": float(battery.minimum_energy_kwh),
-            "max_charge_kwh_per_hour": float(battery.max_charge_kwh_per_hour),
-            "max_discharge_kwh_per_hour": float(battery.max_discharge_kwh_per_hour),
-        },
-    }
 
 
 def compile_constraints(
-    directives: list[Any] | ScenarioRequest,
-    request: ScenarioRequest | list[Any],
+    directives: Sequence[Directive], request: ScenarioRequest
 ) -> ConstraintSet:
-    """Compile guardrailed directives into the five per-hour bound arrays.
+    """Apply the frozen per-hour merge rules without sharing replay-oracle code."""
+    base = default_constraint_set(request)
+    eff_solar = list(base.eff_solar)
+    charge_ub = list(base.charge_ub)
+    discharge_ub = list(base.discharge_ub)
+    grid_ub = list(base.grid_ub)
+    energy_lb = list(base.energy_lb)
+    solar_factors = [1.0] * len(eff_solar)
 
-    The `compiler` seam in `backend/routes/optimize.py` calls this as
-    `(directives, request)` while the oracle underneath takes `(request,
-    directives)`. Both orders are accepted here, resolved by type rather than by
-    position, so a caller cannot silently get it wrong: the two arguments are
-    never the same type, so there is nothing to guess at.
-    """
-    if isinstance(directives, ScenarioRequest):
-        directives, request = request, directives  # called as (request, directives)
-    if not isinstance(request, ScenarioRequest):
-        raise TypeError("compile_constraints needs a ScenarioRequest and a directive list")
+    for directive in directives:
+        if not directive.applies or directive.structured_adjustment is None:
+            continue
+        adjustment = directive.structured_adjustment
+        hours = adjustment["hours"]
+        for hour in hours:
+            if directive.directive_type == "solar_reduction":
+                solar_factors[hour] = min(solar_factors[hour], adjustment["factor"])
+            elif directive.directive_type == "minimum_battery_reserve":
+                energy_lb[hour] = max(energy_lb[hour], adjustment["minimum_energy_kwh"])
+            elif directive.directive_type == "no_charge_window":
+                charge_ub[hour] = 0.0
+            elif directive.directive_type == "no_discharge_window":
+                discharge_ub[hour] = 0.0
+            elif directive.directive_type == "max_grid_window":
+                grid_ub[hour] = min(grid_ub[hour], adjustment["max_grid_kwh"])
 
-    bounds = _compile_bounds(_as_request_dict(request), list(directives))
-    return ConstraintSet(**{name: tuple(bounds[name]) for name in _BOUND_FIELDS})
+    for hour, factor in enumerate(solar_factors):
+        eff_solar[hour] = base.eff_solar[hour] * factor
+
+    return ConstraintSet(
+        eff_solar=tuple(eff_solar),
+        charge_ub=tuple(charge_ub),
+        discharge_ub=tuple(discharge_ub),
+        grid_ub=tuple(grid_ub),
+        energy_lb=tuple(energy_lb),
+    )
