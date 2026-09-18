@@ -69,7 +69,7 @@ honest about what the model actually emits rather than what you hoped it would.
 ## Standing authorization
 
 Combined Task + Implementation Plan is pre-authorized. Stop for a human decision
-before changing C-1 … C-6 or touching another member's files. Do not commit or
+before changing C-1 … C-7 or touching another member's files. Do not commit or
 push unless explicitly requested.
 
 ## First action — blocker B1

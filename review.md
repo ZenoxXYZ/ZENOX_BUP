@@ -66,11 +66,21 @@ Evidence observed so far, with the command or artifact that produced it.
 | Bootstrap | No secrets in committed state files | pattern scan for provider key prefixes, tokens, private-key headers and inline assignments | PASS, no matches |
 | Bootstrap | No source code modified during bootstrap | `git status --porcelain` — Markdown only | PASS |
 
+| WS-05 | Replay validator green gate | prototype then `tests/test_replay.py`: all 10 public reference schedules validate in Mode A and Mode B, 240 hours, 13 rule families | PASS 0 violations |
+| WS-05 | Replay validator red gate | 26 mutation tests covering balance, neutrality, no-charge, no-discharge, grid cap, effective solar, rate limits, idle consistency, active reserve, capacity, totals, trajectory, negative values, and 13 schema/guardrail faults | PASS 26/26 |
+| WS-05 | Tests genuinely exercise the validator | sabotaged the balance, effective-solar and neutrality checks in turn; confirmed only the dependent tests fail (1, 2 and 1 respectively), then restored byte-identical | PASS red-green |
+| WS-05 | Mode A / Mode B distinction is real | constructed a plan consistent with an all-`no_op` misinterpretation that violates the true `solar_reduction`; Mode A passes, Mode B catches it | PASS |
+| WS-05 | Oracle is independent of other workstreams | `replay.py` imports only `math` and `dataclasses` — nothing from `backend` | PASS |
+| WS-05 | Full suite | `pytest tests/ -q` | PASS 50 passed |
+
 ## Open QA Findings
 
 | # | Finding | Severity | Status |
 | --- | --- | --- | --- |
 | F1 | `review.md` carried the template's false verification claims (Postgres / Alembic / PR #3) while member routing pointed all three members at it as canonical | High — would have presented fabricated verification state to a fresh builder session | FIXED at bootstrap |
+| F2 | The Member 1 master prompt told M1 to delete two files in `tests/`, which `MEMBER_1.md` and `MEMBER_3.md` both assign to M3 | Medium — M1 would have edited M3's directory | FIXED — files deleted by M3; correction added to `MEMBER_1.md`; contract C-7 added to `plan.md` |
+| F3 | No test-file partition existed, so three members writing into `tests/` would collide | Medium | FIXED — contract C-7 in `plan.md` |
+| F4 | One mutation test was a silent no-op (set two hours to values the reference already held) and could never have failed | High — a test that cannot fail is worse than no test | FIXED — `_mutate` now asserts the response actually changed |
 
 ## QA Queue
 

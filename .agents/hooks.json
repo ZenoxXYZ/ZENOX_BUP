@@ -1,0 +1,16 @@
+{
+  "builder-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'for p in .agents/hooks/builder-guard.py hooks/builder-guard.py \"$(dirname \"$0\")\"/hooks/builder-guard.py; do [ -f \"$p\" ] && exec python3 \"$p\"; done; printf %s \"{\\\"decision\\\":\\\"ask\\\",\\\"reason\\\":\\\"builder-guard.py not found; approve this command manually\\\"}\"'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
