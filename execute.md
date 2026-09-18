@@ -65,12 +65,12 @@ sufficient.**
 
 | WS | Capability | Owner | Branch | Status | Blockers |
 | --- | --- | --- | --- | --- | --- |
-| WS-01 | API boundary + schemas | M1 | `feat/ws-01-api-contract` | NOT STARTED | — |
-| WS-02 | LLM interpreter | M2 | `feat/ws-02-llm-interpreter` | NOT STARTED | B1 CLEARED — key live in `.env` |
-| WS-03 | Guardrails + compiler | M2 | `feat/ws-03-guardrails-compiler` | NOT STARTED | WS-02 |
-| WS-04 | Optimizer + materializer | M1 | `feat/ws-04-optimizer-materializer` | NOT STARTED | WS-01, C-3 stub |
-| WS-05 | Replay validator + harness | M3 | pushed to `main` (bootstrap) | **LOCAL COMPLETE** — 79/79 green, red-green proven. Harness run end-to-end against M1's live WS-01 service: Mode A 10/10, **Mode B 4/10** (F15), schema 10/10, p50 0.008s. Re-run is MANDATORY once WS-03 merges. | none |
-| WS-06 | Docker, deploy, README, CI | M3 | `feat/ws-06-deploy-docker-readme` | NOT STARTED | WS-01 skeleton; **B2 — no platform account** |
+| WS-01 | API boundary + schemas | M1 | `feat/ws-01-api-contract` | **MERGED** | — |
+| WS-02 | LLM interpreter | M2 | `feat/ws-02-llm-interpreter` | IN FLIGHT | B1 CLEARED — key live in `.env` |
+| WS-03 | Guardrails + compiler | M2 | `feat/ws-03-guardrails-compiler` | IN FLIGHT | WS-02 |
+| WS-04 | Optimizer + materializer | M1 | `feat/ws-04-optimizer-materializer` | **MERGED** (`1c84661`) | Mode B regression (4/10 -> 1/10) reported in F17 due to unmerged WS-02/03 |
+| WS-05 | Replay validator + harness | M3 | pushed to `main` (bootstrap) | **LOCAL COMPLETE** — 78/78 green, red-green proven. Re-run after WS-04: Mode A 10/10, Mode B 1/10 (F17). | none |
+| WS-06 | Docker, deploy, README, CI | M3 | `main` | **CODE COMPLETE (DOCKER UNVERIFIED)** — `Dockerfile`, `.dockerignore`, `ci.yml` (reduced), `ghcr.yml`, `.env.example`, `README.md` delivered. Docker daemon offline on host (`//./pipe/dockerDesktopLinuxEngine` not found) -> local build/run UNVERIFIED. | B2 — HF space / external deployment account |
 
 Integration applicability: all six workstreams require rendezvous. None is `N/A`.
 
@@ -79,7 +79,7 @@ Integration applicability: all six workstreams require rendezvous. None is `N/A`
 | ID | Blocker | Impact | Owner | Action |
 | --- | --- | --- | --- | --- |
 | ~~**B1**~~ | ~~No LLM API key exists on any team machine~~ | **RESOLVED 2026-09-18.** Gemini + Groq keys supplied by M2, both authenticate, both do structured output. Stored in local `.env` (gitignored, never committed). Measured latency: Groq 0.24-1.27s vs Gemini 11.5-15.4s -> see **F8**, the D4 ladder should likely reverse. See also **F7** (Gemini emits hour ranges, not expanded lists) and **F9** (all providers invent `type` names -- use a strict enum). | M2 | Rotate both keys after the round: they were pasted into a chat transcript. |
-| **B2** | No deployment platform account; no GHCR package | 20 points, longest lead time | M3 | Create the HF Space, deploy a `/health`-only skeleton, confirm the Actions → GHCR path |
+| **B2** | Deployment platform account; GHCR publishing verification | 20 points | M3 | GHCR workflow and Dockerfile created. Local Docker daemon offline -> UNVERIFIED. Public deployment pending HF space setup / remote Actions run. |
 | ~~B3~~ | ~~Member names / GitHub handles unknown~~ | — | M3 | **RESOLVED** — seat order confirmed by human: M1 @abidhasan9538, M2 @ZenoxXYZ, M3 @FMAmax. Satisfies D6 (strongest prompt-engineering person on M2). All three collaborators verified with push access. |
 
 B1 and B2 are the only blockers that can void the entire effort, and both are
@@ -134,3 +134,5 @@ Owner M3. Nothing here is complete until verified from outside our own network.
 | Seat confirmation | M3 | Human corrected the provisional M1/M2 order: M1 @abidhasan9538 (WS-01 → WS-04), M2 @ZenoxXYZ (WS-02 → WS-03). Routing files updated to match. |
 | WS-05 part 1 | M3 | `backend/logic/replay.py` landed: both replay modes, schema + physics layers, cascade suppression. `tests/test_replay.py` 50 tests. Green 10/10 reference schedules both modes; red 26 mutation tests; red-green proven by sabotaging three checks and confirming only the dependent tests fail. Deleted three obsolete template tests. Contract C-7 (test-file partition) added to `plan.md`. |
 | WS-05 part 2 | M3 | `tests/harness.py` CLI scorecard and test harness implemented with stdlib fallback, route auto-discovery, Mode A/B verification, latency band calculation, failure resilience, and JSON output. 16 coverage gap and paraphrase fixtures in `tests/fixtures/gap_cases.json`. 28 new tests in `tests/test_replay.py` (78 total) covering C-3 overlap merge rules, 5 failure injection modes, and harness helpers; red-green proven across 6 distinct sabotage mutations. Finding F5 and F6 documented in `review.md`. |
+| WS-04 post-merge & F16/F17 diagnosis | M3 | Measured Mode B pass rate regression from 4/10 to 1/10 post WS-04 merge. Isolated solver test confirmed HiGHS LP formulation is 100% exact (1.0000 cost ratio on all 10 cases, resolving F16). Diagnosed root cause of F17: uncompiled directives due to in-flight WS-02/03. Documented F17 with 1-line reproduction in `review.md`. |
+| WS-06 | M3 | Delivered container and deployment artifacts: `Dockerfile` (python:3.12-slim, non-root appuser uid 1000, dynamic port), `.dockerignore` (venv, git, bytecode, env secrets excluded), `.github/workflows/ci.yml` (reduced to python 3.12 setup, pip install, pytest; postgres/alembic removed), `.github/workflows/ghcr.yml` (GHCR package publish on push/dispatch), `.env.example` (cleaned of postgres residue, documenting provider keys by name only), and comprehensive `README.md` (architecture, API spec, quickstart, Docker commands, harness instructions, credits). Checked local Docker daemon; reported offline (`//./pipe/dockerDesktopLinuxEngine` not found); Docker build/run explicitly recorded as UNVERIFIED. Pytest suite 181 tests green. |
