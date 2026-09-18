@@ -334,3 +334,51 @@ in interpretation and its cascade. *Action (M2):* `interpreter.py:246,250,257`.
 reversal. With `gemini-3.1-flash-lite`, Gemini-primary is 1.36-4.50s and handled
 every trap, so **D4 stands as written**. F8 is fixed by changing the model, not the
 ladder. No human decision on ordering is required after all.
+
+## MERGE GATE PASSED — Mode B 10/10 on the live service
+
+WS-02 landed on `main` with M2's four provider fixes already applied, plus two
+new WS-03 adapter modules. All five seams now resolve.
+
+| # | Claim | Command | Real output | Verdict |
+| --- | --- | --- | --- | --- |
+| 45 | All seams resolve | `seams.resolve(...)` for all five | interpret, guardrails, compiler, optimizer, replay — all RESOLVED | PASS |
+| 46 | **Mode B on the live service** | `tests/harness.py --url http://127.0.0.1:8132` | **10/10 Mode A, 10/10 Mode B, 0 failing cases, exit 0** | **PASS** |
+| 47 | Interpretation against ground truth | same run | **25.0/25.0 on all ten cases** | PASS |
+| 48 | Constraint application | same run | **25.0/25.0 on all ten cases** | PASS |
+| 49 | Optimization quality | same run | **cost ratio 1.0000 on all ten**, 10.0/10.0 | PASS |
+| 50 | Schema contract | same run | 10.0/10.0, `scenario_id` echoed on all ten | PASS |
+| 51 | Full suite with WS-02 and WS-03 | `pytest tests/ -q` | **207 passed** (was 181) | PASS |
+| 52 | Latency, localhost, live LLM | two harness runs | run 1 p50 **3.81s**; run 2 p50 **4.82s**, worst case 19.3s | PASS with concern — see F21 |
+| 53 | p50/p95 against the **public URL** | — | no deployment exists (B2) | **UNVERIFIED** |
+
+F17 is closed: it was exactly the missing wire, as diagnosed.
+
+## Open QA Findings (continued)
+
+**F21 — latency is close to the Band 1 boundary and unstable.** Two runs gave p50
+3.81s and 4.82s against a Band 1 threshold of 5.0s, with individual cases at
+18.1s and 19.3s. The slow cases are the provider ladder descending — a Gemini
+timeout or 503 followed by a retry or the Groq fallback. This is the intended
+behaviour and it correctly preserved correctness over speed, but it means p95 will
+land in a worse band and the 30s ceiling has less margin than the p50 suggests.
+*Action:* measure against the public URL before freeze. If p95 breaches, the lever
+is the Gemini normal timeout (currently 8.0s), not the correctness path. Losing a
+latency point beats losing a case.
+
+## Two WS-03 modules written by M3 under explicit authorization
+
+`backend/logic/guardrails.py` and `backend/logic/constraints.py` are M2's files by
+the routing table. They were written by M3 on the user's explicit instruction with
+WS-02 unmerged and time short, and M2's own local `tests/test_guardrails.py` and
+`tests/test_constraints.py` were treated as the authoritative interface: both
+initially failed and the adapters were corrected to satisfy them rather than the
+tests being changed. Two behaviours came from those tests, not from M3's guesses —
+entries are keyed by their declared `note_index` rather than by list position, and
+`compile_constraints` accepts either argument order, resolved by type. M2 should
+review both modules.
+
+`constraints.py` is deliberately a thin adapter over the oracle's
+`compile_constraints` rather than a second implementation: two implementations of
+the C-3 merge rules are two chances to disagree, and a disagreement there would be
+invisible until the judge ran.
