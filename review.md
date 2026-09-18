@@ -5,7 +5,7 @@ Owner: Member 3 (QA / Integration Lead). Requirements: `problem.md`. Design:
 
 ### Status: WS-01..WS-05 INTEGRATED & VERIFIED — MODE B 10/10 CLEAN
 
-WS-01 through WS-05 are integrated on `main`: 207 unit tests green, all 5 pipeline
+WS-01 through WS-05 are integrated on `main`: 238 unit tests green, all 5 pipeline
 seams wired and verified on a running Uvicorn server (`http://127.0.0.1:8124`).
 The live evaluation harness confirms **Mode A 10/10 PASS**, **Mode B 10/10 PASS**,
 and an exact **1.0000 cost ratio on all 10 public cases** (82.0/83.0 measurable points).
@@ -353,6 +353,32 @@ new WS-03 adapter modules. All five seams now resolve.
 | 53 | p50/p95 against the **public URL** | — | no deployment exists (B2) | **UNVERIFIED** |
 
 F17 is closed: it was exactly the missing wire, as diagnosed.
+
+## WS-02 takeover closeout — PR #4 merged
+
+M3 completed the authorized WS-02 takeover without changing frozen contracts or
+introducing a second interpreter implementation. The stale feature head
+`06a7dad` was reconciled with `origin/main` in `59076de`; the reviewed current-main
+versions resolved the three conflicts (`interpreter.py`, `requirements.txt`, and
+`test_interpreter.py`). PR [#4](https://github.com/ZenoxXYZ/ZENOX_BUP/pull/4) had
+no file delta from its base because the finalized implementation was already in
+`main`; it passed CI and merged as `9180008`.
+
+| # | Claim | Command / method | Real output | Verdict |
+| --- | --- | --- | --- | --- |
+| 54 | WS-02 unit gate | `pytest tests/test_interpreter.py -q` | **16 passed** | PASS |
+| 55 | Whole merged tree | `pytest -q`; `compileall -q backend`; seam probe | **238 passed**; compileall clean; all five seams `True` | PASS |
+| 56 | Provider ladder | Actual Gemini normal, injected strict retry, injected Gemini failure with actual Groq SDK, injected total failure | Gemini 7.551s; strict retry 4.868s; Groq 1.659s; ordered canonical all-`no_op` | PASS |
+| 57 | P4 paraphrases | One live six-note Gemini batch | **6/6** types correct, including end-exclusive hours, factor remaining, relative reserve, and no-op | PASS |
+| 58 | Post-merge end-to-end | `tests/harness.py --url http://127.0.0.1:8124` at `9180008` | interpretation 25.0/25.0; Mode A **10/10**; Mode B **10/10**; cost ratio **1.0000** | PASS |
+| 59 | Post-merge local latency | same run, 10 live provider calls | p50 **6.136s**, p95 **12.878s**; all under 30s, Band 2 | PASS (local only) |
+
+**WS-02 completion state:** **WORKSTREAM COMPLETE.** D4 remains Gemini primary →
+strict Gemini retry → Groq secondary → canonical all-`no_op` degradation. Active
+defaults are `gemini-3.1-flash-lite`, `openai/gpt-oss-120b`, and 8s/8s/6s. No
+secret was printed, committed, or placed in a tracked artifact. B2 (public
+deployment, public latency, and GHCR pull) remains the only deployment-only
+blocker.
 
 ## Open QA Findings (continued)
 
