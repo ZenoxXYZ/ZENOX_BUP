@@ -66,10 +66,10 @@ sufficient.**
 | WS | Capability | Owner | Branch | Status | Blockers |
 | --- | --- | --- | --- | --- | --- |
 | WS-01 | API boundary + schemas | M1 | `feat/ws-01-api-contract` | NOT STARTED | — |
-| WS-02 | LLM interpreter | M2 | `feat/ws-02-llm-interpreter` | NOT STARTED | **B1 — no LLM key** |
+| WS-02 | LLM interpreter | M2 | `feat/ws-02-llm-interpreter` | NOT STARTED | B1 CLEARED — key live in `.env` |
 | WS-03 | Guardrails + compiler | M2 | `feat/ws-03-guardrails-compiler` | NOT STARTED | WS-02 |
 | WS-04 | Optimizer + materializer | M1 | `feat/ws-04-optimizer-materializer` | NOT STARTED | WS-01, C-3 stub |
-| WS-05 | Replay validator + harness | M3 | pushed to `main` (bootstrap) | **LOCAL COMPLETE** — harness, gap fixtures, failure injections red-green proven, 78/78 green | none |
+| WS-05 | Replay validator + harness | M3 | pushed to `main` (bootstrap) | **LOCAL COMPLETE** — 79/79 green, red-green proven. Harness run end-to-end against M1's live WS-01 service: Mode A 10/10, **Mode B 4/10** (F15), schema 10/10, p50 0.008s. Re-run is MANDATORY once WS-03 merges. | none |
 | WS-06 | Docker, deploy, README, CI | M3 | `feat/ws-06-deploy-docker-readme` | NOT STARTED | WS-01 skeleton; **B2 — no platform account** |
 
 Integration applicability: all six workstreams require rendezvous. None is `N/A`.
@@ -78,7 +78,7 @@ Integration applicability: all six workstreams require rendezvous. None is `N/A`
 
 | ID | Blocker | Impact | Owner | Action |
 | --- | --- | --- | --- | --- |
-| **B1** | No LLM API key exists on any team machine | **Eligibility + 60 points.** Nothing in WS-02/03 can be verified. | M2 | Create a Google AI Studio key and make ONE live structured-output call. ~2 minutes. Report model name, latency, whether JSON-schema mode worked. |
+| ~~**B1**~~ | ~~No LLM API key exists on any team machine~~ | **RESOLVED 2026-09-18.** Gemini + Groq keys supplied by M2, both authenticate, both do structured output. Stored in local `.env` (gitignored, never committed). Measured latency: Groq 0.24-1.27s vs Gemini 11.5-15.4s -> see **F8**, the D4 ladder should likely reverse. See also **F7** (Gemini emits hour ranges, not expanded lists) and **F9** (all providers invent `type` names -- use a strict enum). | M2 | Rotate both keys after the round: they were pasted into a chat transcript. |
 | **B2** | No deployment platform account; no GHCR package | 20 points, longest lead time | M3 | Create the HF Space, deploy a `/health`-only skeleton, confirm the Actions → GHCR path |
 | ~~B3~~ | ~~Member names / GitHub handles unknown~~ | — | M3 | **RESOLVED** — seat order confirmed by human: M1 @abidhasan9538, M2 @ZenoxXYZ, M3 @FMAmax. Satisfies D6 (strongest prompt-engineering person on M2). All three collaborators verified with push access. |
 

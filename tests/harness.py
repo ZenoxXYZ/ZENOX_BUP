@@ -38,7 +38,7 @@ from backend.logic.replay import TOL, recomputed_cost, replay, validate_directiv
 def discover_optimize_route(routes_dir: pathlib.Path | None = None) -> tuple[str, bool]:
     """Read backend/routes/ (READ-ONLY) to find the declared optimize endpoint.
 
-    Returns (endpoint_path, was_found). If absent, defaults to /optimize.
+    Returns (endpoint_path, was_found). If absent, defaults to the spec-mandated /optimize-energy (problem.md 15).
     """
     if routes_dir is None:
         routes_dir = ROOT / "backend" / "routes"
@@ -55,7 +55,7 @@ def discover_optimize_route(routes_dir: pathlib.Path | None = None) -> tuple[str
             except Exception:
                 continue
 
-    return "/optimize", False
+    return "/optimize-energy", False
 
 
 def post_request(
@@ -614,22 +614,34 @@ def print_scorecard(
     print(f"{'5. Performance & Reliability':<45} {'10.0':>8} {cat5_score:>8.1f}  {cat5_det}")
 
     # 6. Deployment & Docker Fallback (10 pts)
-    # Harness directly verifies live reachability (3 pts)
+    # The harness can only observe reachability of the URL it was given. Whether
+    # a GHCR image exists, pulls, and reaches /health is NOT observable from
+    # here, so those points are reported as unmeasured rather than assumed. A
+    # scorecard that awards itself points it did not measure is worse than no
+    # scorecard -- it hides exactly the gap it should expose.
     reachable = 3.0 if any(r["status_code"] == 200 for r in results) else 0.0
-    cat6_score = reachable + 7.0 if reachable > 0 else 0.0  # Placeholder 7.0 for image / startup
-    cat6_det = f"HTTP reachable ({'YES' if reachable > 0 else 'NO'})"
-    print(f"{'6. Deployment & Docker Fallback':<45} {'10.0':>8} {cat6_score:>8.1f}  {cat6_det}")
+    cat6_score = reachable
+    cat6_det = "URL reachable ({}) -- image pull/startup NOT MEASURED (7.0 unscored)".format(
+        "YES" if reachable > 0 else "NO"
+    )
+    print(f"{'6. Deployment & Docker Fallback':<45} {'3.0*':>8} {cat6_score:>8.1f}  {cat6_det}")
 
     # 7. Documentation & Reproducibility (10 pts)
-    cat7_score = 10.0
-    cat7_det = "Verified via standalone harness & automated test execution"
-    print(f"{'7. Documentation & Local Reproducibility':<45} {'10.0':>8} {cat7_score:>8.1f}  {cat7_det}")
+    # Judged by a human reading the README on a clean machine. Not observable
+    # from an HTTP client.
+    cat7_score = 0.0
+    cat7_det = "NOT MEASURABLE by this harness -- human review of README (10.0 unscored)"
+    print(f"{'7. Documentation & Local Reproducibility':<45} {'0.0*':>8} {cat7_score:>8.1f}  {cat7_det}")
 
     print("-" * w)
     total_rubric = round(
         cat1_score + cat2_score + cat3_score + cat4_score + cat5_score + cat6_score + cat7_score, 1
     )
-    print(f"{'TOTAL SCORE ESTIMATE':<45} {'100.0':>8} {total_rubric:>8.1f} / 100.0")
+    print(f"{'TOTAL OF WHAT THIS HARNESS CAN MEASURE':<45} {'83.0':>8} {total_rubric:>8.1f} / 83.0")
+    print(
+        "  * 17.0 pts unscored: GHCR image pull/startup (7.0) and README "
+        "reproducibility (10.0) are not observable from an HTTP client."
+    )
     print("=" * w)
     print()
 
@@ -764,7 +776,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--endpoint",
         default=None,
-        help="Override endpoint path (default: discover from backend/routes/ or /optimize)",
+        help="Override endpoint path (default: discover from backend/routes/, else /optimize-energy)",
     )
     parser.add_argument(
         "--timeout",

@@ -1119,12 +1119,34 @@ def test_harness_compute_latency_stats() -> None:
     assert "Band 4" in stats_4["band"]
 
 
-def test_harness_discover_optimize_route() -> None:
-    """Harness route discovery defaults to /optimize when routes are absent."""
+def test_harness_discover_optimize_route_finds_the_declared_path() -> None:
+    """Discovery reads backend/routes/ and returns the endpoint M1 actually declared."""
     from tests.harness import discover_optimize_route
 
     endpoint, found = discover_optimize_route()
-    assert endpoint == "/optimize"
+    assert found is True, (
+        "route discovery found nothing, but backend/routes/optimize.py declares an "
+        "endpoint -- discovery is broken, or the route moved"
+    )
+    assert endpoint == "/optimize-energy", (
+        "the spec mandates POST /optimize-energy (problem.md 15); discovery "
+        "returned {!r}".format(endpoint)
+    )
+
+
+def test_harness_route_fallback_is_the_spec_path(tmp_path) -> None:
+    """With no routes to read, the fallback must still be the spec-mandated path.
+
+    A fallback of /optimize would make the harness POST to a dead URL and report
+    every case as failing, which under contest pressure reads as a broken
+    service rather than a broken harness.
+    """
+    from tests.harness import discover_optimize_route
+
+    empty = tmp_path / "routes"
+    empty.mkdir()
+    endpoint, found = discover_optimize_route(empty)
     assert found is False
+    assert endpoint == "/optimize-energy"
 
 

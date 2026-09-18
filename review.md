@@ -156,3 +156,61 @@ live model name.
 **F12 — `.env.example` is PostgreSQL template residue** and documents
 `DATABASE_URL`/Docker Compose, none of which this service uses. Same class as F1.
 *Action:* WS-06.
+
+## Control Room Verification Log — first true end-to-end run
+
+Against M1's merged WS-01 service (`19d03df`), started locally with uvicorn on
+port 8123. This is the first time any row below was produced by a real HTTP
+round trip rather than a unit test.
+
+| # | Claim | Command | Real output | Verdict |
+| --- | --- | --- | --- | --- |
+| 23 | Service imports and starts | `pip install -r requirements.txt`; `uvicorn backend.main:app` | starts clean | PASS |
+| 24 | `/health` responds | `curl /health` | `{"status":"ok"}` HTTP 200 | PASS |
+| 25 | Route discovery finds M1's real endpoint | `discover_optimize_route()` | `/optimize-energy`, found=True | PASS |
+| 26 | Harness runs end-to-end | `python tests/harness.py --url http://127.0.0.1:8123` | 10/10 cases posted, scorecard printed, exit 1 | PASS |
+| 27 | **Mode A vs Mode B on the live service** | same run | **Mode A 10/10 PASS · Mode B 4/10 PASS** | **FAIL — see F15** |
+| 28 | Schema contract | same run | 10.0/10.0 mean, `scenario_id` echoed on all 10 | PASS |
+| 29 | Live latency | same run | p50 **0.008s**, p95 **0.031s** — Band 1, full 3.0/3.0 | PASS |
+| 30 | Route tests can fail | fallback mutated to `/optimize`; discovery matcher broken | 1 failed each time, the correct test both times; restore byte-identical | PASS (red-green) |
+| 31 | Full suite after rebase onto WS-01 | `python -m pytest tests/ -q` | `79 passed` | PASS |
+| 32 | GHCR image pullable / README reproducible | — | not observable from an HTTP client; now explicitly unscored | **UNVERIFIED** |
+
+**Measurable score on the live service: 52.9 / 83.0.** The remaining 17 points
+(image pull 7.0, README 10.0) are deliberately unscored rather than assumed.
+
+## Open QA Findings (continued)
+
+**F13 — the harness fell back to `POST /optimize`; the spec mandates
+`POST /optimize-energy`** (`problem.md §15`). Discovery reads `backend/routes/`
+and got the right path, so this only bites when discovery fails — and then it
+would POST to a dead URL and report all ten cases failing, which under contest
+pressure reads as a broken service rather than a broken harness. *FIXED:* the
+fallback is now the spec path, with a test that pins each branch separately.
+
+**F14 — the scorecard awarded itself 17 points it never measured.** Category 6
+added a hard-coded `+7.0` "placeholder" for a Docker image that does not exist,
+and category 7 awarded a flat `10.0` for README reproducibility with the detail
+string "Verified via standalone harness". Neither is observable from an HTTP
+client. The inflated total read 69.9/100 where the honest measurable figure is
+52.9/83. Same class as F1: a status display that flatters instead of informing.
+*FIXED:* both now print `NOT MEASURED` and are excluded from the total.
+
+**F15 — the live service satisfies Mode A on all 10 cases but fails Mode B on 6.**
+Every failure is one of two families: `solar_used_kwh` exceeding effective solar
+(SAMPLE-01, 06, 09) or `grid_kwh` exceeding the grid cap (SAMPLE-05, 07, 10).
+The plans are internally self-consistent — balance, bounds and neutrality all
+hold — but ignore `solar_reduction` and `max_grid_window`. This is the precise
+failure the judge punishes three times (25 + 25 + 10 pools). **Expected at this
+stage**, since WS-02 and WS-03 are unmerged and the optimizer is running with an
+empty constraint set; recorded so the re-run after that merge is mandatory, not
+optional. *Action:* re-run this harness the moment WS-03 lands. Until then no
+Mode B claim may be made.
+
+**F16 — cost ratio is 0.906–0.924 on the four cases that do pass**, not ~1.0.
+Since those plans satisfy their constraint set, a ratio below 1 means our cost
+exceeds the reference optimum by 8–10% on cases we otherwise get right. Against
+a pure LP that should be ~1.0. *Action (WS-04):* investigate before Solution
+Freeze — this is roughly 0.9 of the 10 optimization points, cheap to recover if
+it is an objective or bound formulation slip. Cause not yet diagnosed; do not
+assume it is the same cause as F15.
