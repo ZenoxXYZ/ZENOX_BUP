@@ -4,7 +4,7 @@ Approved architecture, contracts, workstreams and topology for the GridWise
 preliminary. Requirements live in `problem.md`; live execution state lives in
 `execute.md`.
 
-**Status:** approved by human design review. Contracts C-1 … C-6 are frozen —
+**Status:** approved by human design review. Contracts C-1 … C-7 are frozen —
 changing any of them requires a human decision, not a builder's judgement.
 
 ## 1. Architecture
@@ -114,6 +114,28 @@ is an explicit penalty and `hourly_plan` is the declared source of truth.
 `ok: bool` · `violations: list[str]`, each naming the hour and the rule.
 Consumed both in-request and by the test harness — same code path, so the harness
 tests what ships.
+
+### C-7 · Test-file partition
+
+`tests/` is owned by M3, but all three members write focused tests for their own
+components (`AGENTS.md §12`). Without a partition, three people writing into one
+directory collide. Assignment is by filename:
+
+| Owner | Files |
+| --- | --- |
+| M1 | `tests/test_api.py`, `tests/test_optimizer.py` |
+| M2 | `tests/test_interpreter.py`, `tests/test_guardrails.py`, `tests/test_constraints.py` |
+| M3 | `tests/test_replay.py`, `tests/harness.py`, `tests/fixtures/`, `tests/conftest.py` |
+
+`tests/conftest.py` puts the repository root on `sys.path`; it exists already, so
+no member needs to add import plumbing.
+
+The three template test files (`test_app.py`, `test_config.py`,
+`test_database.py`) were deleted by M3 in WS-05 — they exercised the Postgres and
+`DATABASE_URL` scaffold plus a `GET /` route and a `Generic Hackathon Starter`
+title that this challenge does not have. **M1 does not need to delete them**; the
+Member 1 master prompt's scaffold-removal step listed two of them before the
+partition existed.
 
 ## 4. The Optimization Is A Pure Linear Program
 
