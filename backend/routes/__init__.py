@@ -1,4 +1,1 @@
-"""HTTP route package.
-
-No product routes are defined yet.
-"""
+"""HTTP routers for the GridWise service."""
