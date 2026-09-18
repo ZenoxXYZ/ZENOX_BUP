@@ -1,288 +1,955 @@
+# ⚡ GridWise — LLM-Assisted Energy Optimization API
+
+GridWise is a stateless backend service that converts natural-language energy-operation instructions into validated machine-readable constraints and computes an optimized 24-hour campus energy schedule.
+
+The repository implements a complete pipeline for:
+
+- receiving a 24-hour energy scenario;
+- interpreting natural-language operator notes with an LLM;
+- validating the interpreted directives;
+- compiling those directives into deterministic constraints;
+- solving the resulting optimization problem with linear programming;
+- materializing a valid hourly dispatch plan;
+- independently replaying the plan against the system rules.
+
+The design separates probabilistic language interpretation from deterministic energy scheduling and verification.
+
 ---
-title: GridWise Energy Optimization API
-emoji: ⚡
-colorFrom: green
-colorTo: blue
-sdk: docker
-app_port: 7860
-pinned: false
----
 
-# GridWise
+# 1. Problem
 
-[![CI](https://github.com/ZenoxXYZ/ZENOX_BUP/actions/workflows/ci.yml/badge.svg)](https://github.com/ZenoxXYZ/ZENOX_BUP/actions/workflows/ci.yml)
-[![GHCR](https://github.com/ZenoxXYZ/ZENOX_BUP/actions/workflows/ghcr.yml/badge.svg)](https://github.com/ZenoxXYZ/ZENOX_BUP/actions/workflows/ghcr.yml)
+The system receives:
 
-**GridWise** is a stateless, LLM-assisted energy-dispatch API for the BUP CSE FEST 2026 Hackathon. Given a 24-hour campus-energy scenario and one to three operator notes, it interprets the notes into safe structured directives, compiles the resulting constraints, and returns a least-cost, physically feasible dispatch plan.
+- a scenario identifier;
+- 1–3 natural-language operator notes;
+- exactly 24 hourly records;
+- hourly demand;
+- hourly available solar generation;
+- hourly electricity tariffs;
+- battery capacity;
+- initial battery energy;
+- minimum battery energy;
+- maximum hourly charge rate;
+- maximum hourly discharge rate.
 
-It is deliberately small: one FastAPI service, a deterministic optimization core, and no database, queue, cache, or persistent state.
+The required output is:
 
-## What it does
+1. a structured interpretation of every operator note; and
+2. a complete 24-hour energy plan.
+
+The main technical challenge is that the input combines two very different forms of computation:
 
 ```text
-24-hour scenario + operator notes
-             │
-             ▼
-     LLM interpretation ladder
-             │
-             ▼
-   deterministic guardrails
-             │
-             ▼
-      constraint compiler
-             │
-             ▼
- SciPy / HiGHS linear optimizer
-             │
-             ▼
- independent replay validation
-             │
-             ▼
- validated 24-hour dispatch plan
-```
+unstructured natural language
+        +
+deterministic constrained optimization
 
-The service supports these operator directives:
+GridWise solves this by inserting a strict validation boundary between the LLM and the optimizer.
 
-| Directive | Effect |
-| --- | --- |
-| `solar_reduction` | Reduces usable solar energy for selected hours. |
-| `minimum_battery_reserve` | Raises the minimum battery energy for selected hours. |
-| `no_charge_window` | Prevents charging in selected hours. |
-| `no_discharge_window` | Prevents discharging in selected hours. |
-| `max_grid_window` | Caps grid import for selected hours. |
-| `no_op` | Represents a note with no applicable operational effect. |
+2. Solution Overview
 
-Time windows are start-inclusive and end-exclusive. Solar factors represent the fraction of forecast energy that remains available.
+The complete request pipeline is:
 
-## API
+Client
+  │
+  ▼
+FastAPI Request Boundary
+  │
+  ▼
+Pydantic Validation
+  │
+  ▼
+LLM Interpreter
+  │
+  ▼
+Structured Provider Output
+  │
+  ▼
+Deterministic Guardrails
+  │
+  ▼
+Constraint Compiler
+  │
+  ▼
+SciPy HiGHS Linear Program
+  │
+  ▼
+Plan Materializer
+  │
+  ▼
+Independent Replay Validator
+  │
+  ▼
+JSON Response
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health` | Readiness probe. Returns `{"status":"ok"}`. |
-| `POST` | `/optimize-energy` | Interprets notes and returns a 24-hour dispatch plan. |
+Each layer has a single responsibility.
 
-Interactive OpenAPI documentation is available at `/docs` while the service is running.
+3. API Surface
+GET /health
 
-### Request contract
+Health/readiness endpoint.
 
-`POST /optimize-energy` accepts:
+GET /health
 
-```json
+Response:
+
+{
+  "status": "ok"
+}
+POST /optimize-energy
+
+Main optimization endpoint.
+
+POST /optimize-energy
+Content-Type: application/json
+
+It accepts one full daily scenario and returns the interpreted directives together with the optimized hourly dispatch plan.
+
+4. Request Model
+
+The request model is defined in:
+
+backend/schemas/scenario.py
+
+Structure:
+
 {
   "scenario_id": "string",
-  "operator_notes": ["string"],
+  "operator_notes": [
+    "string"
+  ],
   "hours": [
     {
       "hour": 0,
-      "demand_kwh": 0,
-      "solar_kwh": 0,
-      "tariff_bdt_per_kwh": 0
+      "demand_kwh": 0.0,
+      "solar_kwh": 0.0,
+      "tariff_bdt_per_kwh": 0.0
     }
   ],
   "battery": {
-    "capacity_kwh": 0,
-    "initial_energy_kwh": 0,
-    "minimum_energy_kwh": 0,
-    "max_charge_kwh_per_hour": 0,
-    "max_discharge_kwh_per_hour": 0
+    "capacity_kwh": 0.0,
+    "initial_energy_kwh": 0.0,
+    "minimum_energy_kwh": 0.0,
+    "max_charge_kwh_per_hour": 0.0,
+    "max_discharge_kwh_per_hour": 0.0
   }
 }
-```
 
-Rules enforced at the API boundary:
+Validation guarantees:
 
-- `operator_notes` contains 1–3 non-blank strings.
-- `hours` contains exactly one entry for every hour `0` through `23`; input order is accepted, but planning is performed chronologically.
-- Energy, tariff, and battery values are finite, non-negative numbers.
-- Structurally invalid requests return `400` with an `invalid_request` payload.
+operator_notes contains 1–3 entries;
+every note is non-empty;
+hours contains exactly 24 entries;
+hour identifiers are exactly 0..23;
+hourly numeric values are finite and non-negative;
+all required battery fields are present.
+5. Supported Directives
 
-### Response contract
+The interpreter and guardrail system supports exactly six directive types.
 
-Every successful response has these top-level fields:
+Directive	Meaning
+solar_reduction	reduce usable solar during selected hours
+minimum_battery_reserve	enforce a minimum battery energy level
+no_charge_window	disable battery charging
+no_discharge_window	disable battery discharge
+max_grid_window	cap grid import
+no_op	the note has no operational effect
 
-```json
+The structured invariant is:
+
+directive_type == "no_op"
+⇔ applies == false
+⇔ structured_adjustment == null
+
+All other directive types use:
+
+applies == true
+
+with a directive-specific adjustment object.
+
+6. Natural-Language Interpretation
+
+The interpreter is implemented in:
+
+backend/services/interpreter.py
+backend/services/interpreter_prompt.py
+
+The current provider flow is:
+
+Google Gemini
+gemini-3.1-flash-lite
+        │
+        ▼
+strict Gemini retry
+        │
+        ▼
+Groq
+openai/gpt-oss-120b
+        │
+        ▼
+canonical no_op degradation
+
+Timeouts:
+
+Gemini normal       8 seconds
+Gemini strict       8 seconds
+Groq fallback       6 seconds
+
+The interpreter processes all operator notes in a single batch.
+
+It provides battery context to the model so relative instructions can be converted into absolute values.
+
+Example:
+
+"maintain at least 50% of battery capacity"
+
+with:
+
+capacity_kwh = 200
+
+becomes:
+
 {
-  "scenario_id": "SAMPLE-01",
-  "directive_interpretation": [
-    {
-      "note_index": 0,
-      "applies": true,
-      "directive_type": "minimum_battery_reserve",
-      "structured_adjustment": {
-        "hours": [17, 18, 19, 20, 21],
-        "minimum_energy_kwh": 90.0
-      },
-      "explanation": "Maintain a 90 kWh reserve during the specified period."
-    }
-  ],
-  "hourly_plan": [
-    {
-      "hour": 0,
-      "grid_kwh": 60.0,
-      "solar_used_kwh": 0.0,
-      "battery_action": "idle",
-      "battery_kwh": 0.0,
-      "battery_energy_after_kwh": 80.0
-    }
-  ],
-  "total_grid_kwh": 1820.0,
-  "total_cost_bdt": 16450.0,
-  "peak_grid_kwh": 215.0,
-  "plan_summary": "Scheduled 24 hours against applicable operator directives."
+  "minimum_energy_kwh": 100
 }
-```
+7. Structured LLM Output
 
-`hourly_plan` always contains the hours `0`–`23` in ascending order. `no_op` is the only directive that may have `applies: false`, and it always has `structured_adjustment: null`.
+Provider output is constrained using Pydantic models.
 
-## Quick start
+The directive type is a closed enum:
 
-### Prerequisites
+solar_reduction
+minimum_battery_reserve
+no_charge_window
+no_discharge_window
+max_grid_window
+no_op
 
-- Python 3.12+
-- Optional: Docker, for containerized execution
-- A Gemini API key for the primary interpretation path; a Groq key is optional but recommended as the secondary provider
+The system does not accept arbitrary provider-defined type names.
 
-### Run locally
+The provider output is still treated as untrusted after schema validation.
 
-```powershell
+It must pass through the deterministic guardrail layer before it can influence optimization.
+
+8. Interpretation Semantics
+Time windows
+
+Time windows are interpreted as start-inclusive and end-exclusive.
+
+"1 PM to 3 PM"
+→ [13, 14]
+
+The prompt requires the model to return every affected hour explicitly.
+
+The guardrail does not infer missing range values.
+
+Solar reduction factor
+
+The factor represents the fraction of solar generation that remains.
+
+80% reduction
+→ factor = 0.2
+reduced by half
+→ factor = 0.5
+Relative reserve values
+
+Percentage-based battery reserve instructions are converted using the actual battery capacity included in the request context.
+
+9. Guardrail Layer
+
+Implemented in:
+
+backend/logic/guardrails.py
+
+The guardrail converts untrusted model output into trusted internal directives.
+
+It validates:
+
+exact directive type;
+note index;
+duplicate indexes;
+missing entries;
+applies;
+adjustment structure;
+exact adjustment fields;
+hour values;
+factor values;
+reserve values;
+grid caps;
+finite numeric values.
+
+Safe normalization includes:
+
+sorting valid hours;
+deduplicating valid hours;
+normalizing no_op;
+repairing unambiguous applies inconsistencies.
+
+Malformed directives degrade independently instead of invalidating unrelated valid directives.
+
+10. Constraint Compilation
+
+Implemented in:
+
+backend/logic/constraints.py
+
+The compiler produces a ConstraintSet containing five 24-hour arrays:
+
+eff_solar
+charge_ub
+discharge_ub
+grid_ub
+energy_lb
+
+Baseline values come from the original scenario.
+
+Directive overlap rules are deterministic.
+
+Solar reductions
+minimum factor wins
+
+Factors are not multiplied.
+
+Battery reserves
+maximum reserve wins
+Grid caps
+minimum grid cap wins
+Charge restrictions
+
+All affected hours are combined.
+
+Discharge restrictions
+
+All affected hours are combined.
+
+11. Optimization Model
+
+Implemented in:
+
+backend/logic/optimizer.py
+
+The optimization problem is a continuous linear program.
+
+For 24 hours, the solver uses 96 variables:
+
+24 grid import variables
+24 solar-used variables
+24 battery-charge variables
+24 battery-discharge variables
+
+The objective is:
+
+minimize
+
+Σ grid_kwh[h] × tariff_bdt_per_kwh[h]
+
+for:
+
+h = 0 ... 23
+12. Energy Constraints
+
+For each hour:
+
+grid
++ solar
++ battery discharge
+=
+demand
++ battery charge
+
+Battery state evolves as:
+
+E_after = E_before + charge - discharge
+
+with:
+
+energy_lb[h]
+≤ E_after[h]
+≤ capacity_kwh
+
+Charge and discharge are additionally bounded by the hourly rate limits.
+
+13. End-of-Day Neutrality
+
+The battery must finish the day at the same energy level at which it started.
+
+E_after[23] = initial_energy_kwh
+
+This ensures the optimizer cannot reduce cost by permanently consuming the initial stored energy.
+
+14. Solver
+
+The optimization layer uses:
+
+scipy.optimize.linprog(
+    ...,
+    method="highs"
+)
+
+This uses the HiGHS linear optimization backend through SciPy.
+
+The optimization problem is purely continuous and linear.
+
+No integer or mixed-integer variables are required.
+
+15. Plan Materialization
+
+Implemented in:
+
+backend/logic/materializer.py
+
+The solver returns numeric vectors.
+
+The materializer converts them into the API's hourly plan.
+
+It handles:
+
+charge/discharge netting;
+battery action labeling;
+battery state tracking;
+grid derivation from the balance equation;
+floating-point cleanup;
+fixed rounding;
+total calculation.
+
+The plan contains exactly one record for every hour.
+
+16. Independent Replay Validation
+
+Implemented in:
+
+backend/logic/replay.py
+
+The replay validator is intentionally independent from the production optimizer and constraint compiler.
+
+It re-derives the system rules from the specification and checks the returned plan hour by hour.
+
+This allows production logic and verification logic to fail independently rather than sharing the same implementation.
+
+Two replay modes exist.
+
+Mode A
+
+Validates the returned plan against the system's own interpreted directives.
+
+Mode B
+
+Validates the plan against externally supplied directive ground truth.
+
+The same replay engine is used by the local harness.
+
+17. Failure Handling
+
+GridWise uses controlled degradation rather than allowing provider or optimizer failures to crash the request path.
+
+Interpreter
+Gemini
+→ strict Gemini retry
+→ Groq
+→ no_op
+Solver
+directive-constrained solve
+→ base-constraint solve
+→ deterministic fallback plan
+Fallback plan
+
+The final fallback:
+
+keeps the battery idle;
+uses available solar;
+imports remaining demand from the grid.
+18. Response Model
+
+Defined in:
+
+backend/schemas/plan.py
+
+The response contains:
+
+scenario_id
+directive_interpretation
+hourly_plan
+total_grid_kwh
+total_cost_bdt
+peak_grid_kwh
+plan_summary
+
+Each hourly plan entry contains:
+
+hour
+grid_kwh
+solar_used_kwh
+battery_action
+battery_kwh
+battery_energy_after_kwh
+19. Verification
+
+The repository contains unit, integration, replay, mutation, and end-to-end tests.
+
+Important verification components include:
+
+tests/test_interpreter.py
+tests/test_guardrails.py
+tests/test_constraints.py
+tests/test_optimizer.py
+tests/test_replay.py
+tests/harness.py
+tests/latency.py
+
+Recorded integrated verification includes:
+
+Mode A replay: 10/10
+Mode B replay: 10/10
+Reference cost ratio: 1.0000
+P4 paraphrase checks: 6/6 semantic passes
+
+The full test count may change as tests are added, so the repository should be treated as the source of truth rather than documenting a fixed permanent number.
+
+20. Technology Stack
+Language
+
+Python
+
+Primary language for the API, optimization, validation, testing, and tooling.
+
+FastAPI
+
+Used for:
+
+HTTP API routing;
+request processing;
+exception handling;
+OpenAPI generation.
+
+https://fastapi.tiangolo.com/
+
+Pydantic
+
+Used for:
+
+request validation;
+response validation;
+provider DTOs;
+runtime invariants.
+
+https://docs.pydantic.dev/
+
+NumPy
+
+Used for numerical matrix and vector construction.
+
+https://numpy.org/
+
+SciPy
+
+Used for the optimization layer through:
+
+scipy.optimize.linprog
+
+https://scipy.org/
+
+HiGHS
+
+Linear optimization backend used through SciPy.
+
+https://highs.dev/
+
+Google Gemini
+
+Primary language-model provider.
+
+Model:
+
+gemini-3.1-flash-lite
+
+SDK:
+
+google-genai
+
+https://ai.google.dev/
+
+Groq
+
+Secondary inference provider.
+
+Model:
+
+openai/gpt-oss-120b
+
+SDK:
+
+groq
+
+https://groq.com/
+
+OpenAI gpt-oss-120b
+
+Fallback language model accessed through Groq.
+
+Model creator:
+
+OpenAI
+
+Uvicorn
+
+ASGI runtime for FastAPI.
+
+https://www.uvicorn.org/
+
+pytest
+
+Automated testing framework.
+
+https://pytest.org/
+
+HTTPX
+
+HTTP client/testing dependency used by the development test stack.
+
+https://www.python-httpx.org/
+
+Docker
+
+Used to package the service into a reproducible container.
+
+Base image:
+
+python:3.12-slim
+
+https://www.docker.com/
+
+GitHub Actions
+
+Used for automated testing and container publishing.
+
+https://github.com/features/actions
+
+GitHub Container Registry
+
+Used for publishing Docker images.
+
+https://ghcr.io/
+
+Hugging Face Spaces
+
+Docker-compatible deployment target.
+
+https://huggingface.co/spaces
+
+21. Repository Structure
+ZENOX_BUP/
+│
+├── backend/
+│   ├── main.py
+│   │
+│   ├── routes/
+│   │   ├── optimize.py
+│   │   └── seams.py
+│   │
+│   ├── schemas/
+│   │   ├── scenario.py
+│   │   ├── constraints.py
+│   │   └── plan.py
+│   │
+│   ├── services/
+│   │   ├── interpreter.py
+│   │   └── interpreter_prompt.py
+│   │
+│   └── logic/
+│       ├── guardrails.py
+│       ├── constraints.py
+│       ├── optimizer.py
+│       ├── materializer.py
+│       └── replay.py
+│
+├── tests/
+│   ├── fixtures/
+│   ├── test_interpreter.py
+│   ├── test_guardrails.py
+│   ├── test_constraints.py
+│   ├── test_optimizer.py
+│   ├── test_replay.py
+│   ├── harness.py
+│   └── latency.py
+│
+├── docs/
+│
+├── problem.md
+├── plan.md
+├── execute.md
+├── review.md
+│
+├── Dockerfile
+├── .dockerignore
+├── .env.example
+├── requirements.txt
+├── requirements-dev.txt
+│
+└── .github/
+    └── workflows/
+        ├── ci.yml
+        └── ghcr.yml
+22. Local Setup
+Clone
 git clone https://github.com/ZenoxXYZ/ZENOX_BUP.git
 cd ZENOX_BUP
-python -m venv .venv
+Create a virtual environment
+
+Windows:
+
+py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt -r requirements-dev.txt
-Copy-Item .env.example .env
-uvicorn backend.main:app --host 0.0.0.0 --port 7860
-```
 
-On macOS or Linux, activate the environment with `source .venv/bin/activate`.
+or:
 
-Set the provider keys in `.env` before starting the service:
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
 
-```dotenv
-GEMINI_API_KEY=your_gemini_key
+Linux/macOS:
+
+python3 -m venv .venv
+source .venv/bin/activate
+Install dependencies
+
+Runtime:
+
+python -m pip install -r requirements.txt
+
+Development:
+
+python -m pip install -r requirements-dev.txt
+23. Environment Configuration
+
+Create:
+
+.env
+
+using:
+
+.env.example
+
+Example:
+
+GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.1-flash-lite
-GROQ_API_KEY=your_groq_key
+
+GROQ_API_KEY=your_groq_api_key_here
 GROQ_MODEL=openai/gpt-oss-120b
-```
 
-Never commit `.env` or paste live keys into issues, pull requests, logs, or screenshots.
+Do not commit live credentials.
 
-Verify the service:
+24. Start the Service
+uvicorn backend.main:app --host 0.0.0.0 --port 7860
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:7860/health
-```
+Health check:
 
-Expected result:
+curl http://127.0.0.1:7860/health
 
-```json
+Expected:
+
 {"status":"ok"}
-```
 
-### Send a sample request
+FastAPI documentation:
 
-The following PowerShell snippet creates a valid 24-hour request and posts it to the local service.
-
-```powershell
-$hours = 0..23 | ForEach-Object {
-  [ordered]@{
-    hour = $_
-    demand_kwh = 100.0
-    solar_kwh = $(if ($_ -ge 8 -and $_ -le 16) { 45.0 } else { 0.0 })
-    tariff_bdt_per_kwh = $(if ($_ -ge 17 -and $_ -le 21) { 14.0 } else { 5.0 })
-  }
-}
-
-$payload = @{
-  scenario_id = "demo-001"
-  operator_notes = @("Keep at least 45% battery reserve from 17:00 until 22:00.")
-  hours = $hours
-  battery = @{
-    capacity_kwh = 200.0
-    initial_energy_kwh = 100.0
-    minimum_energy_kwh = 40.0
-    max_charge_kwh_per_hour = 50.0
-    max_discharge_kwh_per_hour = 50.0
-  }
-} | ConvertTo-Json -Depth 5
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri http://127.0.0.1:7860/optimize-energy `
-  -ContentType "application/json" `
-  -Body $payload
-```
-
-## Architecture and safety
-
-The pipeline is designed so that text interpretation cannot directly produce an unsafe schedule:
-
-1. **Schema gate** validates the HTTP request with Pydantic.
-2. **LLM interpreter** processes the complete note set in a batched request, using Gemini first, then a strict Gemini retry, then Groq.
-3. **Guardrails** validate directive type, hour semantics, factors, reserve values, and the `no_op` invariant.
-4. **Constraint compiler** turns valid directives into per-hour optimization bounds.
-5. **HiGHS LP solver** minimizes grid cost while respecting energy balance, capacity, rate, grid-cap, and end-of-day neutrality constraints.
-6. **Materializer** builds the public hourly plan and recomputes its totals.
-7. **Replay validator** independently checks the returned plan before it is served.
-
-If an external provider or a non-critical stage is unavailable, the service uses a controlled degradation path: affected notes become canonical `no_op` directives and a valid baseline schedule is returned. This keeps the API reliable, but a configured LLM path is required for the challenge's intended, directive-aware operation.
-
-## Testing and evaluation
-
-Install the development dependencies, then run the complete repository test suite:
-
-```powershell
+http://127.0.0.1:7860/docs
+25. Run Tests
 pytest tests/ -q
-python -m compileall -q backend
-```
+26. Run the Evaluation Harness
 
-The independent harness can score a running service against the public cases:
+Start the API:
 
-```powershell
-python tests/harness.py --url http://127.0.0.1:7860 --cases tests/fixtures/public_cases.json
-```
+uvicorn backend.main:app --host 127.0.0.1 --port 8124
 
-The harness checks readiness, response shape, replay validity, ground-truth directive compliance, optimization cost ratio, and observed latency. Its score is evidence, not a substitute for the organizer's evaluation.
+Then:
 
-## Docker
+python tests/harness.py \
+  --url http://127.0.0.1:8124 \
+  --cases tests/fixtures/public_cases.json
 
-Build and run the service without baking secrets into the image:
+The harness checks:
 
-```powershell
-docker build -t gridwise:latest .
-docker run --rm -p 7860:7860 --env-file .env gridwise:latest
-```
+endpoint availability;
+interpretation structure;
+plan consistency;
+ground-truth replay;
+optimization cost;
+latency.
+27. Docker
 
-Then browse to `http://127.0.0.1:7860/docs` or call `/health`.
+Build:
 
-## Constraints and scope
+docker build -t gridwise .
 
-- The service is evaluated on synthetic, discrete 24-hour scenarios.
-- Battery behavior is idealized: no efficiency curve, thermal model, degradation model, grid export, or multi-day state.
-- It is intentionally stateless and has **no database**.
-- Ambiguous or irrelevant notes safely degrade to `no_op`; they are not treated as implicit operational instructions.
-- HTTP `500` responses are opaque and never intentionally include stack traces, provider keys, or environment values.
+Run:
 
-## Repository map
+docker run --rm \
+  -p 7860:7860 \
+  --env-file .env \
+  gridwise
 
-```text
-backend/
-  main.py                 FastAPI application and error boundaries
-  routes/                 HTTP orchestration and optional-stage seams
-  schemas/                Request, response, and constraint contracts
-  services/               LLM interpreter and prompt construction
-  logic/                  Guardrails, LP solver, materialization, replay
-tests/                    API, interpreter, constraints, optimizer, replay, harness
-docs/challenge/           Challenge sources and public sample cases
-problem.md                Approved challenge interpretation
-plan.md                   Approved system design and contracts
-execute.md                Live execution and verification record
-review.md                 Independent findings and verification history
-```
+Health:
 
-## Development notes
+curl http://localhost:7860/health
+28. CI
 
-The repository's implementation truth is code, tests, Git history, and verified runtime evidence. `problem.md` defines the approved challenge interpretation; `plan.md` records the design; `execute.md` and `review.md` record execution and review evidence.
+GitHub Actions CI is configured in:
 
-No database migrations, SQLAlchemy models, PostgreSQL service, or Alembic workflow are required for GridWise.
+.github/workflows/ci.yml
+
+It performs:
+
+checkout
+→ Python 3.12
+→ install requirements
+→ run pytest
+
+The project has no database dependency.
+
+There is no:
+
+PostgreSQL
+SQLAlchemy
+Alembic
+Redis
+persistent storage
+
+in the application architecture.
+
+29. Container Publishing
+
+Container publishing is configured in:
+
+.github/workflows/ghcr.yml
+
+Images are built from the repository Dockerfile and published to GitHub Container Registry.
+
+30. Project Design
+
+The implementation is divided into independent capabilities:
+
+Workstream	Responsibility
+WS-01	API boundary and schemas
+WS-02	LLM interpretation
+WS-03	guardrails and constraint compilation
+WS-04	optimizer and materializer
+WS-05	replay validator and test harness
+WS-06	CI, containerization and deployment
+
+Shared contracts are defined in the schema and planning layers so each component can be implemented and tested independently.
+
+31. Security
+
+The project avoids storing live credentials in source control.
+
+Key practices:
+
+.env is ignored;
+API keys are provided at runtime;
+Docker receives secrets only through environment variables;
+provider failures are sanitized;
+raw provider exceptions are not returned to API clients;
+fallback behavior is deterministic;
+no persistent user data is stored.
+32. Limitations
+
+GridWise implements the mathematical model defined by the repository's problem specification.
+
+It does not model:
+
+battery efficiency loss;
+battery degradation;
+inverter efficiency;
+thermal behavior;
+AC power flow;
+stochastic forecasting;
+grid export;
+multi-day optimization;
+live telemetry;
+persistent state.
+
+All scenarios are processed independently.
+
+33. Credits
+AI and Model Providers
+Google — Gemini models and Google GenAI SDK
+Groq — hosted inference platform
+OpenAI — gpt-oss-120b
+Backend
+FastAPI
+Pydantic
+Uvicorn
+Numerical Computing and Optimization
+NumPy
+SciPy
+HiGHS
+Testing
+pytest
+HTTPX
+Starlette / FastAPI test infrastructure
+Infrastructure
+Docker
+GitHub
+GitHub Actions
+GitHub Container Registry
+Hugging Face Spaces
+34. Team
+
+Developed by the ZENOX team for BUP CSE FEST 2026.
+
+@abidhasan9538
+
+Worked on:
+
+API contracts;
+request/response schemas;
+optimizer;
+plan materialization.
+@ZenoxXYZ
+
+Worked on:
+
+LLM interpretation;
+prompt design;
+provider integration;
+deterministic guardrails;
+constraint compilation.
+@FMAmax
+
+Worked on:
+
+replay validation;
+QA;
+integration harness;
+CI/CD;
+containerization;
+deployment integration.
+35. Summary
+
+GridWise is a hybrid natural-language and mathematical optimization system.
+
+The architecture separates responsibilities clearly:
+
+Natural-language interpretation
+        ↓
+Structured representation
+        ↓
+Deterministic validation
+        ↓
+Constraint compilation
+        ↓
+Linear optimization
+        ↓
+Plan materialization
+        ↓
+Independent replay verification
+
+The LLM is responsible only for interpreting human language.
+
+The deterministic backend is responsible for:
+
+validating that interpretation;
+converting it into numerical constraints;
+computing the schedule;
+validating the resulting plan.
+
+This separation keeps probabilistic language processing isolated from the deterministic energy model.
