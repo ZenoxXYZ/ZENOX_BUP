@@ -299,3 +299,46 @@ the interpreter (WS-02) as the only substantial work left.
 **F16 RESOLVED, and not merely masked:** the earlier 0.906-0.924 ratios came from
 the idle-battery fallback forgoing tariff arbitrage, not from an objective or
 bound slip. With real constraints the LP is exact.
+
+## Control Room Verification Log — WS-02 provider runtime (M2 handoff)
+
+Full detail and the exact patch values: `docs/qa/ws-02-provider-runtime.md`.
+All figures are real calls against the team's live keys.
+
+| # | Claim | Command | Real output | Verdict |
+| --- | --- | --- | --- | --- |
+| 37 | M2's failure is timeouts, not credentials | 3 batched structured calls per model, WS-02 shape | ladder budgets 2.5/1.0/1.5s; measured need 1.36-7.98s. Every timeout sits below the latency of the model it guards | **CONFIRMED — M2 is correct** |
+| 38 | `gemini-3.6-flash` is not viable as primary | 3 calls | **HTTP 503 "high demand" on 2 of 3**, 7.98s on the one that returned | FAIL |
+| 39 | `gemini-3.1-flash-lite` is viable | 3 calls | 1.36s / 4.50s / 4.08s, **3/3 semantically correct** on all three traps | PASS |
+| 40 | Groq secondary works | raw HTTP, explicit UA | 0.89s, correct | PASS |
+| 41 | Groq 403 was not a key problem | same request with and without a User-Agent header | no UA: `HTTP 403 error code: 1010`; with UA: **OK in 0.89s** | PASS — see F18 |
+| 42 | F7 (hour ranges) survives a real prompt | flash-lite with the six-type enum and explicit-hours instruction | `[13,14]` and factor 0.2 on **3/3** | **F7 RESOLVED — my original probe was at fault** |
+| 43 | End-to-end on a merged tree | — | WS-02 not merged; seams still unresolved | **UNVERIFIED** |
+| 44 | p50/p95 against the public URL | — | no deployed URL (B2) | **UNVERIFIED** |
+
+## Open QA Findings (continued)
+
+**F18 — Groq rejects the default Python User-Agent with HTTP 403 `error code: 1010`.**
+A Cloudflare block on `Python-urllib/3.x`. The identical request with any
+User-Agent header succeeds in 0.89s. It does **not** affect
+`backend/services/interpreter.py`, which uses the official `groq` SDK and sends its
+own UA. Recorded because the symptom is indistinguishable from a revoked key and
+would burn scarce time at 22:00. Any raw-HTTP diagnostic or fallback must set a
+User-Agent.
+
+**F19 — `gemini-3.6-flash` returned HTTP 503 on 2 of 3 calls** and 7.98s on the
+third. `interpreter.py:329` currently defaults to it. *Action (M2):* change the
+in-code default to `gemini-3.1-flash-lite` so a missing env var cannot silently
+select the unreliable model. `.env` and `.env.example` are already pinned.
+
+**F20 — the WS-02 timeout ladder is set below measured provider latency.**
+2.5s / 1.0s / 1.5s against calls needing 1.36-7.98s. Recommended
+**8.0s / 8.0s / 6.0s**: worst case 22.0s, inside the 30s ceiling, with the typical
+single-call path at 1.4-4.5s and still in latency Band 1. The trade is explicit —
+a timeout firing early does not protect the 3 latency points, it forfeits up to 60
+in interpretation and its cascade. *Action (M2):* `interpreter.py:246,250,257`.
+
+**F8 RESOLVED WITHOUT AN ARCHITECTURE CHANGE.** M2 was right to refuse a silent D4
+reversal. With `gemini-3.1-flash-lite`, Gemini-primary is 1.36-4.50s and handled
+every trap, so **D4 stands as written**. F8 is fixed by changing the model, not the
+ladder. No human decision on ordering is required after all.
