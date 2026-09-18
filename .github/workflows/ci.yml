@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hadf
+          POSTGRES_PASSWORD: hadf_ci_password
+          POSTGRES_DB: hadf_ci
+        options: >-
+          --health-cmd "pg_isready -U hadf -d hadf_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql+psycopg://hadf:hadf_ci_password@127.0.0.1:5432/hadf_ci
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install declared dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Wait for PostgreSQL
+        run: |
+          python - <<'PY'
+          import os
+          import time
+
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["DATABASE_URL"])
+          for attempt in range(30):
+              try:
+                  with engine.connect() as connection:
+                      connection.execute(text("SELECT 1"))
+                  break
+              except Exception:
+                  if attempt == 29:
+                      raise
+                  time.sleep(1)
+          PY
+      - name: Apply migrations to fresh PostgreSQL
+        run: python -m alembic upgrade head
+      - name: Run tests
+        run: python -m pytest
