@@ -13,7 +13,8 @@ only open detail, and any owner who prefers a different one should say so:
         -> ConstraintSet                                                   WS-03 / M2
     backend.logic.optimizer.solve(request, constraints)
         -> (solar_used, charge, discharge)                                 WS-04 / M1
-    backend.logic.replay.replay(response, request) -> ReplayResult (C-6)   WS-05 / M3
+    backend.logic.replay.replay(request_dict, response_dict)
+        -> ReplayResult (C-6); plain dicts, request first             WS-05 / M3
 """
 
 from __future__ import annotations

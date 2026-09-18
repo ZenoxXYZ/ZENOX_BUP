@@ -144,12 +144,22 @@ def _schedule(request: ScenarioRequest, constraints: ConstraintSet) -> list[Hour
 
 
 def _verify(response: OptimizeResponse, request: ScenarioRequest) -> bool:
-    """Ask WS-05's replay validator whether the assembled plan actually obeys the rules."""
+    """Ask WS-05's replay validator whether the assembled plan actually obeys the rules.
+
+    The oracle is deliberately independent of this package -- it imports only
+    `math` and `dataclasses` -- so it takes plain dicts in `(request, response)`
+    order and knows nothing about our models. Adapting to it is this seam's job.
+    Mode A (self-consistent): no `directives` argument, so it replays the plan
+    against the interpretation we ourselves returned.
+    """
     replay = seams.resolve("replay")
     if replay is None:
         return True
     try:
-        result = replay(response, request)
+        result = replay(
+            request.model_dump(mode="json"),
+            response.model_dump(mode="json"),
+        )
     except Exception:
         logger.exception("replay validator raised; serving the plan unverified")
         return True
